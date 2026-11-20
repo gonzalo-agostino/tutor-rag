@@ -15,7 +15,7 @@ from langchain_core.documents import Document
 from agent import build_tutor_graph, classify_intent
 from config import clean_pdf_text
 from reflection import reflect_and_filter
-from retrieval import RetrievalBundle
+from retrieval import RetrievalBundle, _match_books_mentioned_in_text
 
 
 def _base_state(mensaje: str, modo: str = "consulta", libro: str | None = None) -> dict:
@@ -140,6 +140,30 @@ class PipelineOptimizationsTests(unittest.TestCase):
         self.assertEqual(st["generation_ms"], 0)
         self.assertEqual(st["citas"], [])
         self.assertIn("El libro no trata ese tema.", st["respuesta"])
+
+    def test_match_books_by_author_and_alias(self) -> None:
+        fake_books = [
+            "Designing Data-Intensive Applications The Big Ideas Behind Reliable, Scalable, and Maintainable Systems by Martin Kleppmann (z-lib.org).pdf",
+            "[O'Reilly] AI Engineering_Building Applications with Foundation Models_Chip Huyen.pdf",
+            "[O'Reilly] Designing Machine Learning Systems.pdf",
+            "Clean Code.pdf",
+            "Agentic_Design_Patterns.pdf",
+        ]
+        with patch("retrieval.get_indexed_metadata", return_value={"books": fake_books}):
+            matched = _match_books_mentioned_in_text(
+                "¿Cómo abordan Martin Kleppmann y Chip Huyen el monitoreo y los fallos silenciosos?"
+            )
+            self.assertEqual(len(matched), 3)
+            self.assertIn(fake_books[0], matched)
+            self.assertIn(fake_books[1], matched)
+            self.assertIn(fake_books[2], matched)
+
+            # Título clásico sigue funcionando aunque ahora tenga " — Autor"
+            self.assertEqual(_match_books_mentioned_in_text("¿Qué dice Clean Code sobre funciones?"), ["Clean Code.pdf"])
+            # Alias Uncle Bob y apellido Gulli
+            self.assertEqual(_match_books_mentioned_in_text("Según Uncle Bob y Gulli"), ["Clean Code.pdf", "Agentic_Design_Patterns.pdf"])
+            # Token ambiguo "Martin" solo NO debe disparar falsos positivos
+            self.assertEqual(_match_books_mentioned_in_text("Mi compañero Martin preguntó sobre SQL"), [])
 
 
 if __name__ == "__main__":

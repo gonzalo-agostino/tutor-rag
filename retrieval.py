@@ -118,17 +118,93 @@ def is_book_summary_request(mensaje: str) -> bool:
     return any(t in lower for t in triggers)
 
 
+_AMBIGUOUS_AUTHOR_TOKENS = {
+    "martin",
+    "thomas",
+    "michael",
+    "david",
+    "robert",
+    "andrew",
+    "marco",
+    "sara",
+    "frank",
+    "roger",
+    "andreas",
+    "sarah",
+    "tobias",
+    "antonio",
+    "roland",
+    "daniele",
+    "hannes",
+    "firat",
+    "vaughn",
+    "valliappa",
+    "chip",
+    "addy",
+    "gamma",
+    "helm",
+    "johnson",
+}
+
+_BOOK_ALIASES: dict[str, tuple[str, ...]] = {
+    "ddia": ("designing data-intensive applications",),
+    "kleppmann": ("designing data-intensive applications",),
+    "chip huyen": ("ai engineering", "designing machine learning systems"),
+    "huyen": ("ai engineering", "designing machine learning systems"),
+    "uncle bob": ("clean code",),
+    "robert martin": ("clean code",),
+    "robert c. martin": ("clean code",),
+    "gof": ("design patterns (gof)",),
+    "gang of four": ("design patterns (gof)",),
+    "gulli": ("agentic design patterns",),
+    "osmani": ("beyond vibe coding",),
+    "vernon": ("domain-driven design distilled",),
+    "pressman": ("ingeniería de software",),
+}
+
+
 def _match_books_mentioned_in_text(text: str) -> list[str]:
-    """Detecta qué archivos PDF de la biblioteca aparecen mencionados (por título o nombre)."""
+    """Detecta qué PDFs de la biblioteca aparecen mencionados por título, alias o autor inequívoco."""
     if not text:
         return []
     lower = text.lower()
+    indexed_books = get_indexed_metadata().get("books") or []
     matched: list[str] = []
-    for filename in get_indexed_metadata().get("books") or []:
-        title = format_book_title(filename).lower()
-        base_title = re.sub(r"\s*\([^)]*\)", "", title).strip()
-        if title in lower or (len(base_title) >= 8 and base_title in lower) or filename.lower() in lower:
+
+    # 1. Alias explícitos de libros/autores populares (DDIA, Uncle Bob, GoF, Kleppmann, Chip Huyen, etc.)
+    alias_title_targets: list[str] = []
+    for alias, targets in _BOOK_ALIASES.items():
+        if re.search(rf"\b{re.escape(alias)}\b", lower):
+            alias_title_targets.extend(targets)
+
+    for filename in indexed_books:
+        full_title = format_book_title(filename).lower()
+        title_part, _, author_part = full_title.partition(" — ")
+        base_title = re.sub(r"\s*\([^)]*\)", "", title_part).strip()
+
+        is_match = (
+            full_title in lower
+            or filename.lower() in lower
+            or (len(base_title) >= 8 and base_title in lower)
+            or any(target in title_part for target in alias_title_targets)
+        )
+
+        # 2. Detección automática por autor completo o apellido inequívoco del bloque "— Autor"
+        if not is_match and author_part:
+            clean_author = author_part.strip()
+            if len(clean_author) >= 6 and re.search(rf"\b{re.escape(clean_author)}\b", lower):
+                is_match = True
+            else:
+                for token in re.findall(r"[a-zà-ÿ]{5,}", clean_author):
+                    if token in _AMBIGUOUS_AUTHOR_TOKENS:
+                        continue
+                    if re.search(rf"\b{re.escape(token)}\b", lower):
+                        is_match = True
+                        break
+
+        if is_match and filename not in matched:
             matched.append(filename)
+
     return matched
 
 
@@ -315,24 +391,29 @@ def _retrieve_multi_book_comparison(
 
     client = get_chroma_client()
     collection = client.get_collection(name=COLLECTION_NAME)
-    query_vec = get_embeddings().embed_query(query_text)
+    en_query = _translate_query_to_english(query_text) if target_books else None
+    effective_query = en_query or query_text
+    query_vec = get_embeddings().embed_query(effective_query)
+
+    per_book = max(2, min(4, limit // max(1, len(books)))) if target_books else 1
 
     scored: list[tuple[float, Document]] = []
     for book in books:
         res = collection.query(
             query_embeddings=[query_vec],
-            n_results=1,
+            n_results=per_book,
             where={"source": book},
             include=["documents", "metadatas", "distances"],
         )
         docs = (res.get("documents") or [[]])[0]
         metas = (res.get("metadatas") or [[]])[0]
         dists = (res.get("distances") or [[]])[0]
-        if docs and docs[0]:
-            dist = float(dists[0]) if dists else 1.0
-            scored.append(
-                (dist, Document(page_content=str(docs[0]), metadata=dict(metas[0] or {})))
-            )
+        for idx, doc_text in enumerate(docs):
+            if not doc_text:
+                continue
+            dist = float(dists[idx]) if idx < len(dists) else 1.0
+            meta = dict(metas[idx] or {}) if idx < len(metas) else {}
+            scored.append((dist, Document(page_content=str(doc_text), metadata=meta)))
 
     scored.sort(key=lambda item: item[0])
     return [doc for _, doc in scored[:limit]]
@@ -476,7 +557,7 @@ def retrieve_candidates(
         else:
             docs = _retrieve_multi_book_comparison(
                 query_text,
-                limit=min(8, len(inferred_books)),
+                limit=8,
                 target_books=inferred_books,
             )
             estrategia = "multi_libro_inferido"
