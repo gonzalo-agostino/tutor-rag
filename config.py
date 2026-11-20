@@ -54,29 +54,29 @@ CHUNK_OVERLAP = 200
 
 _metadata_cache: dict[str, Any] | None = None
 
-# Nombres legibles para mostrar en citas, selector de libros y visor de PDF
+# Nombres legibles (Título — Autor) para citas, selector de libros, búsqueda y visor PDF
 BOOK_DISPLAY_TITLES: dict[str, str] = {
-    "1 Artificial Intelligence A Modern Approach 3rd (2009).pdf": "Artificial Intelligence: A Modern Approach (3rd Ed.)",
-    "1 Inteligencia Artificial - Un enfoque moderno.pdf": "Inteligencia Artificial: Un Enfoque Moderno",
-    "3 Data Mining - Practical Machine Learning Tools and Techniques (3rd Ed).pdf": "Data Mining: Practical ML Tools (3rd Ed.)",
-    "7 Introduction to Machine Learning with Python_ A Guide for Data Scientists-O’Reilly Media (2016).pdf": "Introduction to Machine Learning with Python",
-    "[O'Reilly] AI Engineering_Building Applications with Foundation Models_Chip Huyen.pdf": "AI Engineering (Chip Huyen)",
-    "[O'Reilly] AI-Powered Business Intelligence_Improve Forecasts and Decision Making with Machine Learning_Tobias Zwingmann.pdf": "AI-Powered Business Intelligence",
-    "[O'Reilly] Architecting Data and Machine Learning Platforms.pdf": "Architecting Data & ML Platforms",
-    "[O'Reilly] Beyond Vibe Coding From Coder to AI-Era Developer.pdf": "Beyond Vibe Coding",
-    "[O'Reilly] Building Applications with AI Agents Designing and Implementing Multiagent Systems.pdf": "Building Applications with AI Agents",
-    "[O'Reilly] Designing Machine Learning Systems.pdf": "Designing Machine Learning Systems",
-    "[O'Reilly] Generative AI Design Patterns.pdf": "Generative AI Design Patterns",
-    "[O'Reilly] Generative AI on Kubernetes Operationalizing Large Language Models.pdf": "Generative AI on Kubernetes",
-    "[O'Reilly] Machine Learning Design Patterns_Solutions to Common Challenges in Data Preparation Model Building and MLOps.pdf": "Machine Learning Design Patterns",
-    "Agentic_Design_Patterns.pdf": "Agentic Design Patterns",
-    "Clean Code.pdf": "Clean Code",
-    "Design Patterns - Elements of Reusable Object Oriented Software.pdf": "Design Patterns (GoF)",
-    "Designing Data-Intensive Applications The Big Ideas Behind Reliable, Scalable, and Maintainable Systems by Martin Kleppmann (z-lib.org).pdf": "Designing Data-Intensive Applications",
-    "domain-driven-design-distilled.pdf": "Domain-Driven Design Distilled",
-    "Ingenieria-de-software-enfoque-practico-7ed-Pressman.PDF": "Ingeniería de Software (Pressman)",
+    "1 Artificial Intelligence A Modern Approach 3rd (2009).pdf": "Artificial Intelligence: A Modern Approach (3rd Ed.) — Russell & Norvig",
+    "1 Inteligencia Artificial - Un enfoque moderno.pdf": "Inteligencia Artificial: Un Enfoque Moderno — Russell & Norvig",
+    "3 Data Mining - Practical Machine Learning Tools and Techniques (3rd Ed).pdf": "Data Mining: Practical ML Tools (3rd Ed.) — Witten, Frank & Hall",
+    "7 Introduction to Machine Learning with Python_ A Guide for Data Scientists-O’Reilly Media (2016).pdf": "Introduction to Machine Learning with Python — Müller & Guido",
+    "[O'Reilly] AI Engineering_Building Applications with Foundation Models_Chip Huyen.pdf": "AI Engineering — Chip Huyen",
+    "[O'Reilly] AI-Powered Business Intelligence_Improve Forecasts and Decision Making with Machine Learning_Tobias Zwingmann.pdf": "AI-Powered Business Intelligence — Tobias Zwingmann",
+    "[O'Reilly] Architecting Data and Machine Learning Platforms.pdf": "Architecting Data & ML Platforms — Tranquillin, Lakshmanan & Tekiner",
+    "[O'Reilly] Beyond Vibe Coding From Coder to AI-Era Developer.pdf": "Beyond Vibe Coding — Addy Osmani",
+    "[O'Reilly] Building Applications with AI Agents Designing and Implementing Multiagent Systems.pdf": "Building Applications with AI Agents — Michael Albada",
+    "[O'Reilly] Designing Machine Learning Systems.pdf": "Designing Machine Learning Systems — Chip Huyen",
+    "[O'Reilly] Generative AI Design Patterns.pdf": "Generative AI Design Patterns — Lakshmanan & Hapke",
+    "[O'Reilly] Generative AI on Kubernetes Operationalizing Large Language Models.pdf": "Generative AI on Kubernetes — Roland Huß & Daniele Zonca",
+    "[O'Reilly] Machine Learning Design Patterns_Solutions to Common Challenges in Data Preparation Model Building and MLOps.pdf": "Machine Learning Design Patterns — Lakshmanan, Robinson & Munn",
+    "Agentic_Design_Patterns.pdf": "Agentic Design Patterns — Antonio Gulli",
+    "Clean Code.pdf": "Clean Code — Robert C. Martin",
+    "Design Patterns - Elements of Reusable Object Oriented Software.pdf": "Design Patterns (GoF) — Gamma, Helm, Johnson & Vlissides",
+    "Designing Data-Intensive Applications The Big Ideas Behind Reliable, Scalable, and Maintainable Systems by Martin Kleppmann (z-lib.org).pdf": "Designing Data-Intensive Applications — Martin Kleppmann",
+    "domain-driven-design-distilled.pdf": "Domain-Driven Design Distilled — Vaughn Vernon",
+    "Ingenieria-de-software-enfoque-practico-7ed-Pressman.PDF": "Ingeniería de Software (7ª Ed.) — Roger S. Pressman",
     "libro-objetos-patrones.pdf": "Objetos y Patrones",
-    "the-pragmatic-programmer.pdf": "The Pragmatic Programmer",
+    "the-pragmatic-programmer.pdf": "The Pragmatic Programmer — Andrew Hunt & David Thomas",
 }
 
 

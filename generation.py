@@ -103,10 +103,21 @@ def invoke_with_fallback(
             return extract_text_from_content(ai_msg.content)
         except Exception as exc:
             last_exc = exc
-            upper = str(exc).upper()
+            upper = f"{type(exc).__name__} {exc}".upper()
             retryable = any(
                 code in upper
-                for code in ("503", "504", "404", "429", "UNAVAILABLE", "DEADLINE", "NOT_FOUND", "OVERLOADED")
+                for code in (
+                    "503",
+                    "504",
+                    "404",
+                    "429",
+                    "UNAVAILABLE",
+                    "DEADLINE",
+                    "NOT_FOUND",
+                    "OVERLOADED",
+                    "TIMEOUT",
+                    "TIMED OUT",
+                )
             )
             if not retryable:
                 raise

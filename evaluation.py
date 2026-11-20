@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import os
 import re
+import time
 from typing import Any
 
 os.environ.setdefault("DEEPEVAL_TELEMETRY_OPT_OUT", "YES")
@@ -30,7 +31,10 @@ except Exception:
     DEEPEVAL_AVAILABLE = False
     DeepEvalBaseLLM = object  # type: ignore[misc,assignment]
 
-EVAL_JUDGE_MODELS = ("gemini-3.6-flash", "gemini-3.5-flash", "gemini-3.5-flash-lite")
+# Juez rápido e independiente primero (3.1-flash-lite ~1.4s) para evitar timeouts 504 de 3.6/3.5-flash
+EVAL_JUDGE_MODELS = ("gemini-3.1-flash-lite", "gemini-3.5-flash-lite", "gemini-3.6-flash")
+_JUDGE_COOLDOWN_SEC = 300.0
+_judge_cooldown_until: dict[str, float] = {}
 
 
 class EvaluationScores(BaseModel):
@@ -43,28 +47,57 @@ class EvaluationScores(BaseModel):
     engine: str = "deepeval"
 
 
-def _invoke_judge(messages: list, timeout: float = 35.0) -> tuple[str, str]:
-    """Invoca el modelo juez independiente con fallback automático ante 503/504."""
+def _ordered_judge_candidates(preferred_model: str | None = None) -> list[str]:
+    """Ordena modelos juez priorizando el último sano y enviando al final los que están en cooldown."""
+    now = time.monotonic()
+    base = list(EVAL_JUDGE_MODELS)
+    if preferred_model and preferred_model in base:
+        base.remove(preferred_model)
+        base.insert(0, preferred_model)
+    healthy = [m for m in base if _judge_cooldown_until.get(m, 0.0) <= now]
+    cooling = [m for m in base if _judge_cooldown_until.get(m, 0.0) > now]
+    return healthy + cooling
+
+
+def _invoke_judge(
+    messages: list,
+    timeout: float = 15.0,
+    preferred_model: str | None = None,
+) -> tuple[str, str]:
+    """Invoca el modelo juez con fallback rápido ante 503/504/429/ReadTimeout y cooldown de modelos lentos."""
     last_exc: Exception | None = None
-    for model_name in EVAL_JUDGE_MODELS:
+    for model_name in _ordered_judge_candidates(preferred_model):
         try:
             llm = get_llm(
                 temperature=0.0,
                 model_name=model_name,
                 timeout=timeout,
-                max_retries=1,
+                max_retries=0,
             )
             ai_msg = llm.invoke(messages)
+            _judge_cooldown_until.pop(model_name, None)
             return extract_text_from_content(ai_msg.content), model_name
         except Exception as exc:
             last_exc = exc
-            upper = str(exc).upper()
+            upper = f"{type(exc).__name__} {exc}".upper()
             retryable = any(
                 code in upper
-                for code in ("503", "504", "404", "429", "UNAVAILABLE", "DEADLINE", "NOT_FOUND", "OVERLOADED")
+                for code in (
+                    "503",
+                    "504",
+                    "404",
+                    "429",
+                    "UNAVAILABLE",
+                    "DEADLINE",
+                    "NOT_FOUND",
+                    "OVERLOADED",
+                    "TIMEOUT",
+                    "TIMED OUT",
+                )
             )
             if not retryable:
                 raise
+            _judge_cooldown_until[model_name] = time.monotonic() + _JUDGE_COOLDOWN_SEC
     if last_exc is not None:
         raise last_exc
     raise RuntimeError("No hay modelos Gemini disponibles para evaluación.")
@@ -80,7 +113,11 @@ class GeminiDeepEvalLLM(DeepEvalBaseLLM):
         return self._model_name
 
     def generate(self, prompt: str, schema: Any = None) -> Any:
-        raw, used_model = _invoke_judge([HumanMessage(content=prompt)], timeout=35.0)
+        raw, used_model = _invoke_judge(
+            [HumanMessage(content=prompt)],
+            timeout=15.0,
+            preferred_model=self._model_name,
+        )
         self._model_name = used_model
         if schema is not None:
             cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
@@ -118,7 +155,7 @@ def _fallback_llm_judge(query: str, response: str, contexts: list[str]) -> Evalu
                 SystemMessage(content="Respondé únicamente con JSON válido."),
                 HumanMessage(content=prompt),
             ],
-            timeout=25.0,
+            timeout=15.0,
         )
         cleaned = re.sub(r"^```(?:json)?\s*", "", raw.strip(), flags=re.IGNORECASE)
         cleaned = re.sub(r"\s*```$", "", cleaned)
