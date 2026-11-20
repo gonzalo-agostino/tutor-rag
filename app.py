@@ -437,7 +437,27 @@ async def chat_endpoint(
         )
 
         contexts = [c.extracto for c in result.citas if c.extracto]
-        if contexts and bool(runtime_cfg.get("enable_evaluation", True)):
+        if trace.estrategia == "conversacional":
+            await asyncio.to_thread(
+                update_metric_scores,
+                metric_id,
+                faithfulness=None,
+                context_precision=None,
+                faithfulness_reason="Turno conversacional sin recuperación RAG.",
+                context_precision_reason="Turno conversacional sin recuperación RAG.",
+                eval_engine="skipped_conversational",
+            )
+        elif not contexts:
+            await asyncio.to_thread(
+                update_metric_scores,
+                metric_id,
+                faithfulness=None,
+                context_precision=None,
+                faithfulness_reason="Sin fragmentos retenidos tras reflexión (ruta sin_contexto).",
+                context_precision_reason="Sin fragmentos retenidos tras reflexión (ruta sin_contexto).",
+                eval_engine="skipped_no_context",
+            )
+        elif bool(runtime_cfg.get("enable_evaluation", True)):
             background_tasks.add_task(
                 _run_background_evaluation,
                 metric_id,
@@ -445,7 +465,7 @@ async def chat_endpoint(
                 result.respuesta,
                 contexts,
             )
-        elif not bool(runtime_cfg.get("enable_evaluation", True)):
+        else:
             await asyncio.to_thread(
                 update_metric_scores,
                 metric_id,

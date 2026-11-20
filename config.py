@@ -273,3 +273,51 @@ def get_indexed_metadata(use_cache: bool = True) -> dict[str, Any]:
     }
     _metadata_cache = result
     return result
+
+
+_PDF_NOISE_LINE_PATTERNS = (
+    # Cabeceras/pies típicos de O'Reilly y libros técnicos: "Weak Isolation Levels | 233" o "233 | Weak Isolation Levels"
+    re.compile(r"^\s*\d{1,4}\s*\|\s*[^\n]{2,95}\s*$"),
+    re.compile(r"^\s*[^\n]{2,95}\s*\|\s*\d{1,4}\s*$"),
+    # Número de página suelto en una línea
+    re.compile(r"^\s*(?:page\s+|pág\.?\s*)?\d{1,4}\s*$", re.IGNORECASE),
+    # Líneas de índice con puntos suspensivos ("Distributed Systems ......... 214")
+    re.compile(r"^[^\n]{2,95}\.{4,}\s*\d{1,4}\s*$"),
+    # Marcas de agua / avisos editoriales repetitivos
+    re.compile(r"^\s*(?:download(?:ed)?\s+from\s+http|all\s+rights\s+reserved\.?|copyright\s*©?\s*\d{4}).*$", re.IGNORECASE),
+)
+
+_EDGE_CHAPTER_HEADER_RE = re.compile(
+    r"^\s*(?:chapter|capítulo)\s+\d{1,3}\s*[:.\-–|]?\s*[^\n]{0,80}$",
+    re.IGNORECASE,
+)
+
+
+def clean_pdf_text(text: str) -> str:
+    """Limpia cabeceras/pies de página, números de página sueltos y líneas de índice de un fragmento PDF."""
+    if not text:
+        return ""
+    lines = text.replace("\r\n", "\n").replace("\r", "\n").split("\n")
+    cleaned: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if not stripped:
+            cleaned.append("")
+            continue
+        if any(pat.match(stripped) for pat in _PDF_NOISE_LINE_PATTERNS):
+            continue
+        cleaned.append(line.rstrip())
+
+    # Quitar cabeceras de capítulo sueltas únicamente si quedaron pegadas al inicio o final del fragmento
+    while cleaned and not cleaned[0].strip():
+        cleaned.pop(0)
+    while cleaned and not cleaned[-1].strip():
+        cleaned.pop()
+    if len(cleaned) > 1 and _EDGE_CHAPTER_HEADER_RE.match(cleaned[0].strip()):
+        cleaned.pop(0)
+    if len(cleaned) > 1 and _EDGE_CHAPTER_HEADER_RE.match(cleaned[-1].strip()):
+        cleaned.pop()
+
+    joined = "\n".join(cleaned)
+    joined = re.sub(r"\n{3,}", "\n\n", joined)
+    return joined.strip()

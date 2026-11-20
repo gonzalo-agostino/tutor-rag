@@ -32,10 +32,10 @@ Debés analizar rigurosamente los fragmentos y devolver EXCLUSIVAMENTE un objeto
 }
 
 Reglas estrictas:
-1. Descartá fragmentos irrelevantes, índices vacíos, agradecimientos, biografías del autor o textos que no respondan a la consulta.
+1. Descartá fragmentos irrelevantes, índices, referencias bibliográficas, agradecimientos, biografías del autor, cabeceras sueltas o bloques de código aislados sin explicación conceptual que no respondan a la consulta.
 2. Si existen dos documentos sobre el mismo tema con diferente vigencia (por ejemplo una obra de 2009 frente a un libro de 2024/2025 sobre LLMs/Agentes), priorizá la fuente más reciente o explicá el matiz en `conflictos_resueltos`.
-3. `indices_relevantes` debe contener los números (1-based) de los fragmentos que SÍ aportan evidencia sólida, ordenados del más útil al menos útil (máximo 6).
-4. Poné `requiere_rebusqueda: true` ÚNICAMENTE si casi ningún fragmento sirve (0 o 1 fragmento muy débil) y creés que otra query técnica (en inglés + español) recuperará mejores resultados; en ese caso escribí `nueva_query_sugerida`.
+3. `indices_relevantes` debe contener ÚNICAMENTE los números (1-based) de los fragmentos que SÍ aportan evidencia directa y sólida, ordenados del más útil al menos útil (máximo 5). Si NINGÚN fragmento responde realmente a la consulta, devolvé `"indices_relevantes": []` (nunca rellenes con fragmentos irrelevantes) y explicá brevemente qué faltó o qué sugerís en `notas_sintesis`.
+4. Poné `requiere_rebusqueda: true` ÚNICAMENTE en el primer intento si casi ningún fragmento sirve (0 o 1 fragmento débil) y creés que otra query técnica recuperará mejores resultados. Si el usuario describe un problema de negocio (ej. "ERP + stock online/local"), traducilo en `nueva_query_sugerida` a los conceptos técnicos canónicos en inglés (ej. "distributed inventory consistency transactions concurrency control race conditions optimistic locking").
 5. No incluyas texto fuera del JSON ni bloques Markdown ```json.
 """
 
@@ -165,14 +165,12 @@ def reflect_and_filter(
     if requiere_rebusqueda and not nueva_query:
         requiere_rebusqueda = False
 
-    # Si no se va a re-buscar y el filtro vació todo, conservar los 3 mejores para que el generador responda con transparencia
-    if not valid_indices and not requiere_rebusqueda:
-        valid_indices = list(range(1, min(3, total) + 1))
-
-    filtered_docs = [documentos[i - 1] for i in valid_indices[:6]]
+    # Permitir 0 fragmentos retenidos cuando la reflexión determina que ninguno responde la consulta:
+    # el grafo enrutará directo a `sin_contexto` sin malgastar tokens de generación ni degradar métricas.
+    filtered_docs = [documentos[i - 1] for i in valid_indices[:5]]
     result = ReflectionResult(
         ejecutada=True,
-        indices_relevantes=valid_indices[:6],
+        indices_relevantes=valid_indices[:5],
         chunks_iniciales=total,
         chunks_retenidos=len(filtered_docs),
         chunks_descartados=max(0, total - len(filtered_docs)),

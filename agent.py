@@ -9,6 +9,7 @@ Conecta las capas modulares:
 
 from __future__ import annotations
 
+import re
 import time
 from functools import lru_cache
 from typing import Any, Literal, TypedDict
@@ -23,6 +24,7 @@ from generation import (
     build_citations,
     build_no_context_message,
     generate_consultation,
+    generate_conversational_reply,
     generate_quick_read,
 )
 from reflection import ReflectionResult, reflect_and_filter
@@ -82,6 +84,115 @@ class AgenticRAGState(TypedDict):
     retrieval_ms: int
     reflection_ms: int
     generation_ms: int
+
+
+_TECHNICAL_QUERY_CUES = (
+    "explic",
+    "compar",
+    "resum",
+    "defin",
+    "busc",
+    "ejemplo",
+    "código",
+    "codigo",
+    "roadmap",
+    "orden de lectura",
+    "arquitectura",
+    "patrón",
+    "patron",
+    "diferencia",
+    "ventaja",
+    "desventaja",
+    "implement",
+    "diseñ",
+    "según mis libros",
+    "segun mis libros",
+    "qué es",
+    "que es",
+    "cómo funciona",
+    "como funciona",
+    "cómo se ",
+    "como se ",
+    "cómo implementar",
+    "como implementar",
+    "cómo usar",
+    "como usar",
+    "cómo aplicar",
+    "como aplicar",
+    "cuándo usar",
+    "cuando usar",
+    "por qué ",
+    "por que ",
+    "capítulo",
+    "capitulo",
+    "fase ",
+    "sección",
+    "seccion",
+    "dame ",
+    "mostrame",
+    "muéstrame",
+    "decime",
+    "contame",
+    "qué dicen",
+    "que dicen",
+    "quiero desarrollar",
+    "quiero construir",
+    "quiero hacer",
+)
+
+_CONVERSATIONAL_START_RE = re.compile(
+    r"^(?:"
+    r"hola|buenas(?:\s+(?:tardes|noches|d[ií]as))?|buen\s+d[ií]a|hey|che|"
+    r"gracias|muchas\s+gracias|mil\s+gracias|genial|perfecto|excelente|buen[ií]simo|joya|b[aá]rbaro|"
+    r"claro|dale|ok|okay|listo|entiendo|entendido|comprendo|de\s+acuerdo|"
+    r"s[ií](?:\s*,|\s+por\s+favor|\s+claro|\s+dale|\s+perfecto|\s+me\s+gustar[ií]a|\s*$)|"
+    r"no(?:\s*,|\s+gracias|\s*$)|"
+    r"me\s+gustar[ií]a\s+eso|me\s+sirve|muy\s+claro|todo\s+claro|s[uú]per|bien|jaja+"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def classify_intent(mensaje: str, modo: ModoTutor) -> Literal["conversacional", "consulta_tecnica"]:
+    """Clasificador liviano (0 ms) que evita disparar RAG en saludos o confirmaciones breves."""
+    if modo != "consulta":
+        return "consulta_tecnica"
+    text = " ".join((mensaje or "").strip().split())
+    if not text or len(text) > 200:
+        return "consulta_tecnica"
+    if "?" in text or "¿" in text:
+        return "consulta_tecnica"
+    lower = text.lower()
+    if any(cue in lower for cue in _TECHNICAL_QUERY_CUES):
+        return "consulta_tecnica"
+    if _CONVERSATIONAL_START_RE.match(lower):
+        return "conversacional"
+    return "consulta_tecnica"
+
+
+def enrutar_intencion_inicial(
+    state: AgenticRAGState,
+) -> Literal["conversacional", "recuperacion_pasiva"]:
+    """Decide al inicio del grafo si responder conversacionalmente o ejecutar el pipeline RAG."""
+    if classify_intent(state["mensaje"], state["modo"]) == "conversacional":
+        return "conversacional"
+    return "recuperacion_pasiva"
+
+
+def nodo_conversacional(state: AgenticRAGState) -> dict[str, Any]:
+    """Nodo rápido para mensajes puramente conversacionales (0 ms retrieval/reflection)."""
+    t0 = time.perf_counter()
+    respuesta = generate_conversational_reply(
+        mensaje=state["mensaje"],
+        historial=state.get("historial") or [],
+        libro=state.get("libro"),
+    )
+    return {
+        "estrategia": "conversacional",
+        "respuesta": respuesta,
+        "citas": [],
+        "generation_ms": int((time.perf_counter() - t0) * 1000),
+    }
 
 
 def nodo_recuperacion_pasiva(state: AgenticRAGState) -> dict[str, Any]:
@@ -173,8 +284,10 @@ def enrutar_tras_reflexion(
 
 def nodo_sin_contexto(state: AgenticRAGState) -> dict[str, Any]:
     """Nodo de respaldo cuando no hay fragmentos relevantes tras la reflexión."""
+    reflexion = state.get("reflexion") or {}
+    notas = str(reflexion.get("notas_sintesis") or "").strip()
     return {
-        "respuesta": build_no_context_message(state.get("libro")),
+        "respuesta": build_no_context_message(state.get("libro"), notas=notas),
         "citas": [],
     }
 
@@ -217,13 +330,22 @@ def build_tutor_graph():
     """Construye y compila el grafo Agentic RAG de LangGraph."""
     workflow = StateGraph(AgenticRAGState)
 
+    workflow.add_node("conversacional", nodo_conversacional)
     workflow.add_node("recuperacion_pasiva", nodo_recuperacion_pasiva)
     workflow.add_node("reflexion_agente", nodo_reflexion_agente)
     workflow.add_node("sin_contexto", nodo_sin_contexto)
     workflow.add_node("generar_lectura_rapida", nodo_generar_lectura_rapida)
     workflow.add_node("generar_consulta", nodo_generar_consulta)
 
-    workflow.add_edge(START, "recuperacion_pasiva")
+    workflow.add_conditional_edges(
+        START,
+        enrutar_intencion_inicial,
+        {
+            "conversacional": "conversacional",
+            "recuperacion_pasiva": "recuperacion_pasiva",
+        },
+    )
+    workflow.add_edge("conversacional", END)
     workflow.add_edge("recuperacion_pasiva", "reflexion_agente")
     workflow.add_conditional_edges(
         "reflexion_agente",

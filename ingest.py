@@ -23,6 +23,7 @@ from config import (
     CHUNK_SIZE,
     COLLECTION_NAME,
     LIBROS_DIR,
+    clean_pdf_text,
     ensure_directories,
     get_chroma_client,
     get_embedding_provider,
@@ -230,7 +231,7 @@ def _load_and_split_pdf(
     skipped_pages = 0
     for page_num, page in enumerate(reader.pages, start=1):
         try:
-            text = (page.extract_text() or "").strip()
+            text = clean_pdf_text(page.extract_text() or "")
         except Exception:
             skipped_pages += 1
             continue

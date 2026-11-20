@@ -181,20 +181,46 @@ def build_history_messages(historial: list[dict[str, str]]) -> list[BaseMessage]
     return messages
 
 
-def build_no_context_message(libro: str | None) -> str:
+def build_no_context_message(libro: str | None, notas: str = "") -> str:
     """Mensaje de respaldo cuando no hay fragmentos relevantes o la base está vacía."""
     clean_book = (libro or "").strip()
+    clean_notes = (notas or "").strip()
+    notes_block = f"\n\n> **Diagnóstico del agente:** {clean_notes}" if clean_notes else ""
     if clean_book:
         return (
-            f"No encontré fragmentos relevantes para el libro **{format_book_title(clean_book)}**.\n\n"
-            "Probá cambiar el selector de alcance a **Todos los libros** o reformular tu consulta."
+            f"No encontré fragmentos relevantes para esta consulta dentro de **{format_book_title(clean_book)}**."
+            f"{notes_block}\n\n"
+            "Probá cambiar el selector de alcance a **Todos los libros** o reformular la pregunta con términos técnicos más específicos."
         )
     return (
-        "Todavía no hay libros indexados en `chroma_db/` o ningún fragmento resultó relevante para tu consulta.\n\n"
-        "1. Copiá tus archivos `.pdf` dentro de la carpeta `libros/`.\n"
-        "2. Ejecutá `uv run python ingest.py` o presioná **Re-indexar biblioteca** en el panel lateral.\n"
-        "3. Volvé a iniciar una **Lectura rápida** o realizar una consulta."
+        "No encontré fragmentos suficientemente relevantes en tu biblioteca indexada para responder esta consulta sin inventar información."
+        f"{notes_block}\n\n"
+        "Probá reformular la pregunta con conceptos técnicos más concretos o verificar si el tema está cubierto por los PDFs de `libros/`."
     )
+
+
+CONVERSATIONAL_SYSTEM_PROMPT = """Eres un Tutor Técnico RAG cercano, claro y conciso.
+El usuario acaba de enviar un mensaje puramente conversacional (saludo, agradecimiento, confirmación o comentario breve) que NO requiere buscar en los PDFs.
+
+Reglas:
+1. Respondé en español natural y breve (2 a 4 líneas máximo).
+2. Tené en cuenta el historial de la conversación si el usuario está confirmando o comentando algo anterior.
+3. No inventes citas ni referencias a páginas de libros.
+4. Cerrá invitándolo con una sugerencia concreta a hacer la siguiente pregunta técnica o explorar un tema de su biblioteca.
+"""
+
+
+def generate_conversational_reply(
+    mensaje: str,
+    historial: list[dict[str, str]],
+    libro: str | None = None,
+) -> str:
+    """Responde turnos puramente conversacionales sin disparar búsqueda vectorial ni reflexión."""
+    messages: list[BaseMessage] = [SystemMessage(content=CONVERSATIONAL_SYSTEM_PROMPT)]
+    messages.extend(build_history_messages(historial))
+    scope_hint = f" (alcance actual: {format_book_title(libro)})" if (libro or "").strip() else ""
+    messages.append(HumanMessage(content=f"{mensaje}{scope_hint}"))
+    return invoke_with_fallback(messages, temperature=0.4, timeout=20.0)
 
 
 def generate_quick_read(

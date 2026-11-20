@@ -11,6 +11,7 @@ from langchain_core.messages import BaseMessage, HumanMessage, SystemMessage
 
 from config import (
     COLLECTION_NAME,
+    clean_pdf_text,
     format_book_title,
     get_chroma_client,
     get_embeddings,
@@ -46,6 +47,16 @@ class RetrievalBundle:
     estrategia: str = "estandar"
     is_generic_quick_read: bool = False
     is_roadmap: bool = False
+
+    def __post_init__(self) -> None:
+        cleaned_docs: list[Document] = []
+        for doc in self.documentos:
+            cleaned_text = clean_pdf_text(doc.page_content or "")
+            if cleaned_text:
+                cleaned_docs.append(
+                    Document(page_content=cleaned_text, metadata=dict(doc.metadata or {}))
+                )
+        self.documentos = cleaned_docs
 
 
 def is_generic_quick_read_request(mensaje: str) -> bool:
