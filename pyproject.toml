@@ -1,0 +1,25 @@
+[project]
+name = "tutor-rag"
+version = "0.1.0"
+description = "Tutor RAG multi-dispositivo con LangGraph, ChromaDB, Gemini y FastAPI"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "chromadb>=1.5.9",
+    "deepeval>=4.3.4",
+    "fastapi>=0.165.0",
+    "fonttools>=4.68.0",
+    "langchain-chroma>=1.1.0",
+    "langchain-community>=0.4.2",
+    "langchain-google-genai>=4.5.1",
+    "langchain-huggingface>=0.1.2",
+    "langgraph>=1.2.23",
+    "pydantic>=2.14.4",
+    "pymupdf>=2.1",
+    "pypdf>=7.1.1",
+    "python-dotenv>=1.2.4",
+    "uvicorn>=0.54.0",
+]
+
+[tool.uv]
+package = false

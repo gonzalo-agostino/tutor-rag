@@ -1,0 +1,979 @@
+<!DOCTYPE html>
+<html lang="es" class="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#0F1115" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='16' fill='%23161920' stroke='%23242936' stroke-width='3'/%3E%3Cpath d='M19 20h10c4 0 7 2 7 6v20c-2-2-4.5-3-7-3H19V20zm26 0H35c-4 0-7 2-7 6v20c2-2 4.5-3 7-3h10V20z' fill='none' stroke='%23F59E0B' stroke-width='3.2' stroke-linejoin='round'/%3E%3C/svg%3E" />
+  <title>Biblioteca Técnica · Espacio de Estudio RAG</title>
+
+  <!-- Tipografía: Inter (UI), Lora (Lectura larga), JetBrains Mono (Código) -->
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Lora:ital,wght@0,400;0,500;0,600;1,400&display=swap" rel="stylesheet" />
+
+  <!-- Tailwind compilado localmente para producción -->
+
+  <!-- Markdown + Sanitizer + Syntax Highlighting (Python, Java, TypeScript, SQL y más) -->
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.11.1/styles/github-dark.min.css" />
+  <script defer src="https://cdn.jsdelivr.net/npm/marked@15.0.7/marked.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/dompurify@3.2.4/dist/purify.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/@highlightjs/cdn-assets@11.11.1/highlight.min.js"></script>
+  <script defer src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+
+  <link rel="stylesheet" href="/static/tailwind.generated.css" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body class="bg-canvas text-ink font-sans antialiased selection:bg-indigo-500/30 selection:text-white overflow-hidden">
+  <div id="appShell" class="app-shell flex w-full overflow-hidden">
+    <!-- Backdrop para drawer en móvil / iPad vertical -->
+    <div
+      id="sidebarBackdrop"
+      class="fixed inset-0 z-30 bg-black/60 backdrop-blur-[2px] opacity-0 pointer-events-none transition-opacity duration-200 lg:hidden"
+      aria-hidden="true"
+    ></div>
+
+    <!-- Sidebar colapsable -->
+    <aside
+      id="sidebar"
+      class="sidebar fixed inset-y-0 left-0 z-40 flex w-[290px] max-w-[85vw] flex-col bg-surface border-r border-hairline transition-transform duration-200 ease-out -translate-x-full lg:static lg:translate-x-0 lg:shrink-0"
+      aria-label="Biblioteca y alcance de búsqueda"
+    >
+      <!-- Cabecera Sidebar -->
+      <div class="flex items-center justify-between px-4 py-3.5 border-b border-hairline">
+        <div class="flex items-center gap-2.5 min-w-0">
+          <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-elevated border border-hairline text-amberSoft">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+              <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+            </svg>
+          </div>
+          <div class="min-w-0">
+            <h1 class="text-sm font-semibold tracking-tight text-ink truncate">Estudio RAG</h1>
+            <p id="sidebarStats" class="text-[11px] text-muted truncate">Cargando biblioteca...</p>
+          </div>
+        </div>
+        <button
+          id="closeSidebarBtn"
+          type="button"
+          class="flex h-8 w-8 items-center justify-center rounded-lg text-muted hover:text-ink hover:bg-elevated transition-colors lg:hidden"
+          aria-label="Cerrar barra lateral"
+        >
+          <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+
+      <!-- Acción: Nueva sesión -->
+      <div class="px-3 pt-3 pb-2 space-y-2">
+        <button
+          id="newSessionBtn"
+          type="button"
+          class="w-full flex items-center justify-center gap-2 rounded-lg bg-elevated hover:bg-[#222734] border border-hairline px-3 py-2 text-xs font-medium text-ink transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <line x1="12" y1="5" x2="12" y2="19" />
+            <line x1="5" y1="12" x2="19" y2="12" />
+          </svg>
+          <span>Nuevo chat de estudio</span>
+        </button>
+      </div>
+
+      <!-- Chats guardados (localStorage) -->
+      <div class="px-3 pt-1 pb-1 flex items-center justify-between">
+        <span class="text-[11px] font-medium uppercase tracking-wider text-muted">Chats recientes</span>
+        <span id="sidebarChatCount" class="text-[11px] font-mono text-muted">0</span>
+      </div>
+      <div id="sidebarChatList" class="max-h-40 overflow-y-auto px-2 pb-2 space-y-0.5 custom-scroll border-b border-hairline" aria-label="Conversaciones guardadas">
+        <!-- Inyectado dinámicamente desde localStorage -->
+      </div>
+
+      <!-- Buscador rápido de libros -->
+      <div class="px-3 pt-2.5 pb-1.5 space-y-2">
+        <div class="relative">
+          <svg class="pointer-events-none absolute left-2.5 top-1/2 -translate-y-1/2 text-muted" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="11" cy="11" r="8" />
+            <line x1="21" y1="21" x2="16.65" y2="16.65" />
+          </svg>
+          <input
+            id="bookFilterInput"
+            type="text"
+            placeholder="Filtrar libros..."
+            autocomplete="off"
+            class="w-full rounded-lg bg-canvas border border-hairline pl-8 pr-3 py-1.5 text-xs text-ink placeholder:text-muted focus:border-indigoSoft/60 focus:outline-none transition-colors"
+          />
+        </div>
+      </div>
+
+      <!-- Lista de libros (Alcance) -->
+      <div class="px-3 pt-1 pb-1.5 flex items-center justify-between">
+        <span class="text-[11px] font-medium uppercase tracking-wider text-muted">Alcance de lectura</span>
+        <span id="sidebarBookCount" class="text-[11px] font-mono text-muted">0</span>
+      </div>
+
+      <nav id="sidebarBookList" class="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5 custom-scroll" aria-label="Libros indexados">
+        <!-- Inyectado dinámicamente desde GET /books -->
+      </nav>
+
+      <!-- Footer Sidebar -->
+      <div class="p-3 border-t border-hairline space-y-2 bg-surface">
+        <button
+          id="ingestBtn"
+          type="button"
+          class="w-full flex items-center justify-center gap-2 rounded-lg bg-canvas hover:bg-elevated border border-hairline px-3 py-2 text-xs font-medium text-muted hover:text-ink transition-colors"
+          title="Escanear libros/ e indexar nuevos PDFs en ChromaDB"
+        >
+          <svg id="ingestIcon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 1 1-2.64-6.36" />
+            <polyline points="21 3 21 9 15 9" />
+          </svg>
+          <span id="ingestBtnText">Re-indexar biblioteca</span>
+        </button>
+        <div class="flex items-center justify-between px-1 text-[11px] text-muted">
+          <span class="inline-flex items-center gap-1.5">
+            <span id="statusDot" class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+            <span id="modelLabel" class="font-mono truncate">ONNX · Gemini</span>
+          </span>
+          <span id="chunkBadge" class="font-mono text-[10px] opacity-80">0 frags</span>
+        </div>
+        <button
+          id="openDashboardBtn"
+          type="button"
+          class="w-full flex items-center justify-between gap-2 px-2.5 py-2 rounded-lg bg-canvas hover:bg-elevated border border-hairline hover:border-indigoSoft/40 text-[11px] font-mono text-muted hover:text-ink transition-colors"
+          title="Abrir Dashboard de Observabilidad en vivo y Configuración del Pipeline"
+        >
+          <span class="inline-flex items-center gap-1.5 min-w-0">
+            <svg class="text-indigoSoft shrink-0" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+            </svg>
+            <span id="metricsSummaryLabel" class="truncate">Observabilidad & Config</span>
+          </span>
+          <span id="metricsQuickScores" class="text-[10px] text-amberSoft shrink-0"></span>
+        </button>
+      </div>
+    </aside>
+
+    <!-- Área principal -->
+    <div class="flex flex-1 flex-col min-w-0 h-full bg-canvas">
+      <!-- Top Bar minimalista (Linear / Claude) -->
+      <header class="shrink-0 z-20 border-b border-hairline bg-canvas/90 backdrop-blur-md">
+        <div class="mx-auto flex max-w-4xl items-center justify-between gap-3 px-3 sm:px-6 h-14">
+          <div class="flex items-center gap-2.5 min-w-0 flex-1">
+            <!-- Toggle sidebar (móvil + escritorio) -->
+            <button
+              id="toggleSidebarBtn"
+              type="button"
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-hairline bg-surface text-muted hover:text-ink hover:border-[#343B4D] transition-colors"
+              aria-label="Mostrar u ocultar biblioteca"
+              title="Biblioteca de libros"
+            >
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="3" width="18" height="18" rx="2" ry="2" />
+                <line x1="9" y1="3" x2="9" y2="21" />
+              </svg>
+            </button>
+
+            <!-- Selector de alcance (Filter by Book) sobre el chat -->
+            <div class="relative flex-1 max-w-md min-w-0">
+              <div class="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-amberSoft/90">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M4 19.5A2.5 2.5 0 0 1 6.5 17H20" />
+                  <path d="M6.5 2H20v20H6.5A2.5 2.5 0 0 1 4 19.5v-15A2.5 2.5 0 0 1 6.5 2z" />
+                </svg>
+              </div>
+              <select
+                id="bookSelect"
+                aria-label="Filtrar búsqueda por libro"
+                class="w-full appearance-none truncate rounded-lg bg-surface border border-hairline pl-9 pr-8 py-1.5 text-sm font-medium text-ink hover:border-[#343B4D] focus:border-indigoSoft/70 focus:outline-none transition-colors cursor-pointer"
+              >
+                <option value="">Todos los libros (0)</option>
+              </select>
+              <div class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-muted">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <polyline points="6 9 12 15 18 9" />
+                </svg>
+              </div>
+            </div>
+          </div>
+
+          <!-- Indicador de alcance activo + botón Dashboard -->
+          <div class="flex items-center gap-2 shrink-0">
+            <span id="scopePill" class="hidden sm:inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-2.5 py-1 text-xs text-muted">
+              <span class="h-1.5 w-1.5 rounded-full bg-indigoSoft"></span>
+              <span id="scopePillText">Biblioteca completa</span>
+            </span>
+            <button
+              id="headerDashboardBtn"
+              type="button"
+              class="flex h-9 w-9 items-center justify-center rounded-lg border border-hairline bg-surface text-muted hover:text-ink hover:border-indigoSoft/50 transition-colors"
+              title="Observabilidad en vivo y Configuración"
+              aria-label="Observabilidad y configuración"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </header>
+
+      <!-- Banner de aviso (API key / biblioteca vacía) -->
+      <div id="configBanner" class="hidden mx-auto w-full max-w-3xl px-4 pt-3">
+        <div class="flex items-start gap-2.5 rounded-xl border border-amber-500/30 bg-amber-500/10 px-4 py-2.5 text-xs text-amber-200">
+          <svg class="shrink-0 mt-0.5 text-amberSoft" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z" />
+            <line x1="12" y1="9" x2="12" y2="13" />
+            <line x1="12" y1="17" x2="12.01" y2="17" />
+          </svg>
+          <span id="configBannerText"></span>
+        </div>
+      </div>
+
+      <!-- Zona de conversación / lectura -->
+      <main id="chatScroll" class="flex-1 overflow-y-auto custom-scroll px-3 sm:px-6 py-6">
+        <div id="chatContainer" class="mx-auto w-full max-w-3xl flex flex-col gap-7 pb-6">
+          <!-- Estado inicial estilo Claude / Notion -->
+          <section id="emptyState" class="my-auto pt-4 sm:pt-10 pb-4">
+            <div class="text-center max-w-xl mx-auto">
+              <div class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-2xl bg-surface border border-hairline text-amberSoft shadow-lg shadow-black/30">
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z" />
+                  <path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z" />
+                </svg>
+              </div>
+              <h2 class="font-serif text-2xl sm:text-3xl font-medium tracking-tight text-ink">
+                ¿Qué querés estudiar hoy?
+              </h2>
+              <p class="mt-2.5 text-sm text-muted leading-relaxed">
+                Consultá toda tu biblioteca o filtrá un libro puntual desde el selector superior.
+                Todas las respuestas incluyen citas verificables con el extracto original del PDF.
+              </p>
+            </div>
+
+            <!-- Tarjetas de acceso rápido -->
+            <div class="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <button
+                type="button"
+                data-starter="lectura_rapida"
+                class="starter-card group text-left rounded-xl bg-surface hover:bg-elevated border border-hairline hover:border-amberSoft/40 p-4 transition-all"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-2 text-xs font-semibold text-amberSoft">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2" />
+                    </svg>
+                    Lectura rápida
+                  </span>
+                  <span class="text-muted group-hover:text-ink transition-colors text-xs">→</span>
+                </div>
+                <p class="mt-1.5 text-xs text-muted leading-relaxed">
+                  Explorá un concepto clave al azar con resumen directo, ejemplo en código y una pregunta de autoevaluación.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                data-starter="explicar"
+                class="starter-card group text-left rounded-xl bg-surface hover:bg-elevated border border-hairline hover:border-indigoSoft/40 p-4 transition-all"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-2 text-xs font-semibold text-indigoSoft">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <circle cx="12" cy="12" r="10" />
+                      <path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3" />
+                      <line x1="12" y1="17" x2="12.01" y2="17" />
+                    </svg>
+                    Explicar concepto
+                  </span>
+                  <span class="text-muted group-hover:text-ink transition-colors text-xs">→</span>
+                </div>
+                <p class="mt-1.5 text-xs text-muted leading-relaxed">
+                  Definición clara, casos de uso reales y cuándo conviene evitar un patrón según tus libros.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                data-starter="codigo"
+                class="starter-card group text-left rounded-xl bg-surface hover:bg-elevated border border-hairline hover:border-indigoSoft/40 p-4 transition-all"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-2 text-xs font-semibold text-emerald-400">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="16 18 22 12 16 6" />
+                      <polyline points="8 6 2 12 8 18" />
+                    </svg>
+                    Aplicar a código
+                  </span>
+                  <span class="text-muted group-hover:text-ink transition-colors text-xs">→</span>
+                </div>
+                <p class="mt-1.5 text-xs text-muted leading-relaxed">
+                  Convertí teoría y patrones en implementaciones limpias y listas para producción.
+                </p>
+              </button>
+
+              <button
+                type="button"
+                data-starter="comparar"
+                class="starter-card group text-left rounded-xl bg-surface hover:bg-elevated border border-hairline hover:border-amberSoft/40 p-4 transition-all"
+              >
+                <div class="flex items-center justify-between">
+                  <span class="inline-flex items-center gap-2 text-xs font-semibold text-sky-400">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <line x1="18" y1="20" x2="18" y2="10" />
+                      <line x1="12" y1="20" x2="12" y2="4" />
+                      <line x1="6" y1="20" x2="6" y2="14" />
+                    </svg>
+                    Comparar autores
+                  </span>
+                  <span class="text-muted group-hover:text-ink transition-colors text-xs">→</span>
+                </div>
+                <p class="mt-1.5 text-xs text-muted leading-relaxed">
+                  Contrastá cómo abordan un mismo tema distintos autores dentro de tu biblioteca.
+                </p>
+              </button>
+            </div>
+          </section>
+        </div>
+      </main>
+
+      <!-- Caja de escritura fija abajo (con 4 modos rápidos de estudio encima) -->
+      <footer id="composerFooter" class="shrink-0 z-20 border-t border-hairline bg-canvas/95 backdrop-blur-md composer-safe">
+        <div class="mx-auto w-full max-w-3xl px-3 sm:px-6 pt-2.5 pb-3 space-y-2">
+          <!-- 4 Modos rápidos de estudio (Chips sobre el input) -->
+          <div class="quick-chips flex items-center gap-1.5 overflow-x-auto pb-0.5 no-scrollbar" role="toolbar" aria-label="Modos rápidos de estudio">
+            <button type="button" data-chip="explicar" class="study-chip">
+              <span class="h-1.5 w-1.5 rounded-full bg-indigoSoft"></span>
+              <span>Explicar concepto</span>
+            </button>
+            <button type="button" data-chip="codigo" class="study-chip">
+              <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+              <span>Aplicar a código</span>
+            </button>
+            <button type="button" data-chip="comparar" class="study-chip">
+              <span class="h-1.5 w-1.5 rounded-full bg-sky-400"></span>
+              <span>Comparar autores</span>
+            </button>
+            <button type="button" data-chip="lectura_rapida" class="study-chip study-chip-amber">
+              <span class="h-1.5 w-1.5 rounded-full bg-amberSoft"></span>
+              <span>Lectura rápida</span>
+            </button>
+            <button type="button" data-chip="roadmap" class="study-chip">
+              <span class="h-1.5 w-1.5 rounded-full bg-violet-400"></span>
+              <span>Roadmap de libros</span>
+            </button>
+          </div>
+
+          <!-- Input principal -->
+          <div class="composer-box flex items-end gap-2 rounded-2xl bg-surface border border-hairline px-3.5 py-2 focus-within:border-indigoSoft/60 focus-within:ring-1 focus-within:ring-indigoSoft/25 transition-all shadow-lg shadow-black/25">
+            <textarea
+              id="chatInput"
+              rows="1"
+              placeholder="Escribí una consulta técnica o elegí un modo rápido arriba..."
+              class="flex-1 resize-none bg-transparent text-[16px] sm:text-[15px] leading-6 text-ink placeholder:text-muted focus:outline-none max-h-40 py-1"
+            ></textarea>
+
+            <button
+              id="sendBtn"
+              type="button"
+              aria-label="Enviar consulta"
+              title="Enviar (Enter)"
+              class="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-indigo-500 hover:bg-indigo-400 disabled:opacity-40 disabled:cursor-not-allowed text-white transition-colors"
+            >
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <line x1="22" y1="2" x2="11" y2="13" />
+                <polygon points="22 2 15 22 11 13 2 9 22 2" />
+              </svg>
+            </button>
+          </div>
+        </div>
+      </footer>
+    </div>
+  </div>
+
+  <!-- Backdrop para Hilo paralelo en pantallas chicas -->
+  <div
+    id="sideThreadBackdrop"
+    class="fixed inset-0 z-30 bg-black/55 backdrop-blur-[2px] opacity-0 pointer-events-none transition-opacity duration-200 xl:hidden"
+    aria-hidden="true"
+  ></div>
+
+  <!-- Panel lateral de Consulta paralela (Deep Dive) -->
+  <aside
+    id="sideThread"
+    class="side-thread fixed inset-y-0 right-0 z-40 flex w-full sm:w-[440px] lg:w-[480px] flex-col bg-surface border-l border-hairline shadow-2xl shadow-black/60 translate-x-full transition-transform duration-200 ease-out"
+    aria-label="Hilo paralelo de consulta"
+  >
+    <div class="flex items-center justify-between gap-2 px-4 py-3 border-b border-hairline bg-canvas/90">
+      <div class="min-w-0 flex-1">
+        <div class="flex items-center gap-1.5">
+          <span class="h-1.5 w-1.5 rounded-full bg-amberSoft shrink-0"></span>
+          <span class="text-[11px] font-medium uppercase tracking-wider text-amberSoft">Hilo paralelo</span>
+        </div>
+        <h3 id="sideThreadTitle" class="text-sm font-semibold text-ink truncate mt-0.5">Consulta rápida</h3>
+      </div>
+
+      <div class="flex items-center gap-1.5 shrink-0">
+        <button
+          id="promoteSideThreadBtn"
+          type="button"
+          class="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-elevated hover:bg-[#232836] px-2.5 py-1.5 text-[11.5px] font-medium text-ink transition-colors"
+          title="Convertir este hilo en un chat independiente en la barra lateral"
+        >
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
+            <polyline points="15 3 21 3 21 9" />
+            <line x1="10" y1="14" x2="21" y2="3" />
+          </svg>
+          <span>Pasar a chat</span>
+        </button>
+        <button
+          id="closeSideThreadBtn"
+          type="button"
+          class="flex h-8 w-8 items-center justify-center rounded-lg border border-hairline bg-elevated text-muted hover:text-ink transition-colors"
+          aria-label="Cerrar hilo paralelo"
+          title="Cerrar (Esc)"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="18" y1="6" x2="6" y2="18" />
+            <line x1="6" y1="6" x2="18" y2="18" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <div id="sideThreadScroll" class="flex-1 overflow-y-auto custom-scroll px-4 py-4">
+      <div id="sideThreadMessages" class="flex flex-col gap-5 pb-4"></div>
+    </div>
+
+    <div class="shrink-0 border-t border-hairline bg-canvas/95 p-3 composer-safe">
+      <div class="flex items-end gap-2 rounded-xl bg-surface border border-hairline px-3 py-1.5 focus-within:border-indigoSoft/60">
+        <textarea
+          id="sideThreadInput"
+          rows="1"
+          placeholder="Repreguntá en este hilo paralelo..."
+          class="flex-1 resize-none bg-transparent text-[15px] leading-6 text-ink placeholder:text-muted focus:outline-none max-h-28 py-1"
+        ></textarea>
+        <button
+          id="sideThreadSendBtn"
+          type="button"
+          aria-label="Enviar en hilo paralelo"
+          class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-amber-500 hover:bg-amber-400 disabled:opacity-40 text-canvas transition-colors"
+        >
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.3">
+            <line x1="22" y1="2" x2="11" y2="13" />
+            <polygon points="22 2 15 22 11 13 2 9 22 2" />
+          </svg>
+        </button>
+      </div>
+    </div>
+  </aside>
+
+  <!-- Menú contextual (Clic derecho en escritorio) -->
+  <div
+    id="contextMenu"
+    role="menu"
+    class="context-menu hidden fixed z-50 w-64 rounded-xl border border-hairline bg-[#181c24]/95 backdrop-blur-md p-1.5 shadow-2xl shadow-black/70"
+  >
+    <div id="contextMenuHeader" class="px-2.5 py-1.5 text-[11px] text-muted border-b border-hairline mb-1 truncate"></div>
+    <div id="contextMenuItems" class="flex flex-col gap-0.5"></div>
+  </div>
+
+  <!-- Barra flotante de selección (iPad / móvil y selección rápida) -->
+  <div
+    id="selectionToolbar"
+    class="selection-toolbar hidden fixed z-40 items-center gap-1 rounded-full border border-hairline bg-[#181c24]/95 backdrop-blur-md px-2 py-1 shadow-xl shadow-black/60"
+    role="toolbar"
+    aria-label="Acciones sobre texto seleccionado"
+  >
+    <button type="button" data-sel-action="parallel" class="sel-pill sel-pill-amber">Hilo paralelo</button>
+    <button type="button" data-sel-action="new_chat" class="sel-pill">Nuevo chat</button>
+    <button type="button" data-sel-action="code" class="sel-pill">Código</button>
+    <button type="button" data-sel-action="compare" class="sel-pill">Comparar</button>
+  </div>
+
+  <!-- Vista Full-Screen: Dashboard de Observabilidad & Configuración -->
+  <div
+    id="dashboardModal"
+    class="fixed inset-0 z-50 hidden flex-col bg-canvas text-ink"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="dashboardModalTitle"
+  >
+    <!-- Barra superior fija -->
+    <header class="shrink-0 border-b border-hairline bg-surface/95 backdrop-blur-md">
+      <div class="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-3 px-4 sm:px-6 py-3">
+        <div class="flex items-center gap-3 min-w-0">
+          <button
+            id="closeDashboardBtn"
+            type="button"
+            class="inline-flex items-center gap-1.5 rounded-lg border border-hairline bg-elevated hover:bg-[#232938] px-3 py-1.5 text-xs font-medium text-ink transition-colors"
+            aria-label="Volver al chat"
+            title="Volver al chat (Esc)"
+          >
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+            <span>Volver al chat</span>
+          </button>
+
+          <div class="min-w-0">
+            <h3 id="dashboardModalTitle" class="text-sm sm:text-base font-semibold text-ink truncate">
+              Observabilidad Agentic RAG
+            </h3>
+            <p class="hidden sm:block text-[11px] text-muted">
+              Métricas en vivo (DeepEval) y control del pipeline en caliente
+            </p>
+          </div>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-2">
+          <!-- Selector de Tabs -->
+          <div class="inline-flex rounded-lg border border-hairline bg-elevated p-0.5 text-xs">
+            <button type="button" data-dash-tab="metrics" class="dash-tab active px-3 py-1.5 rounded-md font-medium">
+              Observabilidad
+            </button>
+            <button type="button" data-dash-tab="config" class="dash-tab px-3 py-1.5 rounded-md font-medium">
+              Configuración
+            </button>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <!-- Cuerpo principal con scroll único y limpio -->
+    <div class="flex-1 min-h-0 overflow-y-auto custom-scroll">
+      <div class="mx-auto max-w-7xl px-4 sm:px-6 py-5 sm:py-6">
+        <!-- TAB 1: OBSERVABILIDAD EN VIVO -->
+        <section id="dashTabMetrics" class="space-y-5">
+          <!-- Barra de estado y acciones -->
+          <div class="flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2 text-xs text-muted">
+              <span id="livePulseDot" class="h-2 w-2 rounded-full bg-emerald-400 animate-pulse"></span>
+              <span class="font-medium text-ink/90">Monitoreo en tiempo real</span>
+              <span id="dashLastUpdated" class="font-mono text-[11px] opacity-75"></span>
+            </div>
+            <div class="flex flex-wrap items-center gap-2">
+              <label class="inline-flex items-center gap-1.5 text-xs text-muted cursor-pointer select-none px-3 py-1.5 rounded-lg border border-hairline bg-surface hover:border-[#343B4D]">
+                <input id="dashAutoRefresh" type="checkbox" checked class="accent-indigo-500 rounded" />
+                <span>Auto (3s)</span>
+              </label>
+              <button
+                id="dashRefreshBtn"
+                type="button"
+                class="px-3 py-1.5 rounded-lg border border-hairline bg-surface hover:bg-elevated text-xs font-medium text-ink transition-colors"
+              >
+                Actualizar
+              </button>
+              <button
+                id="dashExportBtn"
+                type="button"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-indigoSoft/35 bg-indigo-500/10 hover:bg-indigo-500/20 text-xs font-medium text-indigo-200 transition-colors"
+                title="Descargar reporte completo de métricas y configuración en JSON"
+              >
+                <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+                  <polyline points="7 10 12 15 17 10" />
+                  <line x1="12" y1="15" x2="12" y2="3" />
+                </svg>
+                <span>Exportar JSON</span>
+              </button>
+              <button
+                id="dashClearBtn"
+                type="button"
+                class="px-3 py-1.5 rounded-lg border border-rose-500/30 bg-rose-500/10 hover:bg-rose-500/20 text-xs font-medium text-rose-200 transition-colors"
+              >
+                Limpiar historial
+              </button>
+            </div>
+          </div>
+
+          <!-- 4 KPI Cards -->
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div class="rounded-xl border border-hairline bg-surface p-4">
+              <div class="flex items-center justify-between">
+                <p class="text-[11px] uppercase tracking-wider text-muted">Fidelidad media</p>
+                <span class="h-2 w-2 rounded-full bg-amberSoft"></span>
+              </div>
+              <p id="kpiFaithfulness" class="mt-2 text-2xl font-mono font-semibold text-amberSoft">—</p>
+              <div class="mt-2.5 h-1.5 w-full rounded-full bg-canvas overflow-hidden">
+                <div id="kpiFaithBar" class="h-full bg-amberSoft rounded-full transition-all duration-300" style="width: 0%"></div>
+              </div>
+              <p class="mt-2 text-[11px] text-muted">Afirmaciones respaldadas por el PDF</p>
+            </div>
+
+            <div class="rounded-xl border border-hairline bg-surface p-4">
+              <div class="flex items-center justify-between">
+                <p class="text-[11px] uppercase tracking-wider text-muted">Relevancia contexto</p>
+                <span class="h-2 w-2 rounded-full bg-indigoSoft"></span>
+              </div>
+              <p id="kpiPrecision" class="mt-2 text-2xl font-mono font-semibold text-indigoSoft">—</p>
+              <div class="mt-2.5 h-1.5 w-full rounded-full bg-canvas overflow-hidden">
+                <div id="kpiPrecBar" class="h-full bg-indigoSoft rounded-full transition-all duration-300" style="width: 0%"></div>
+              </div>
+              <p class="mt-2 text-[11px] text-muted">ContextualRelevancy vs pregunta</p>
+            </div>
+
+            <div class="rounded-xl border border-hairline bg-surface p-4">
+              <p class="text-[11px] uppercase tracking-wider text-muted">Latencia media</p>
+              <p id="kpiLatency" class="mt-2 text-2xl font-mono font-semibold text-ink">—</p>
+              <p id="kpiRuns" class="mt-4 text-[11px] font-mono text-muted">0 consultas registradas</p>
+            </div>
+
+            <div class="rounded-xl border border-hairline bg-surface p-4">
+              <p class="text-[11px] uppercase tracking-wider text-muted">Filtro Agéntico</p>
+              <p id="kpiDiscarded" class="mt-2 text-2xl font-mono font-semibold text-emerald-400">0</p>
+              <p id="kpiRequeries" class="mt-4 text-[11px] font-mono text-muted">0 re-búsquedas adaptativas</p>
+            </div>
+          </div>
+
+          <!-- Bento Grid: Gráfico + Desglose de Latencia (izq) + Tabla de Trazas (der) -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 items-start">
+            <!-- Columna izquierda: Gráfico + Desglose de latencia -->
+            <div class="lg:col-span-5 space-y-4">
+              <div class="rounded-xl border border-hairline bg-surface p-4 sm:p-5">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                  <h4 class="text-xs font-semibold text-ink">Evolución en vivo</h4>
+                  <div class="flex items-center gap-3 text-[11px] text-muted">
+                    <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-amberSoft"></span>Fidelidad</span>
+                    <span class="inline-flex items-center gap-1.5"><span class="h-2 w-2 rounded-full bg-indigoSoft"></span>Precisión</span>
+                  </div>
+                </div>
+                <div id="dashChartWrap" class="w-full">
+                  <!-- SVG generado dinámicamente -->
+                </div>
+              </div>
+
+              <!-- Desglose de latencia promedio -->
+              <div class="rounded-xl border border-hairline bg-surface p-4 sm:p-5 space-y-3">
+                <div class="flex items-center justify-between gap-2">
+                  <h4 class="text-xs font-semibold text-ink">Desglose de latencia promedio</h4>
+                  <span id="latTotalLabel" class="text-[11px] font-mono text-muted">—</span>
+                </div>
+
+                <!-- Barra apilada -->
+                <div class="h-2.5 w-full rounded-full bg-canvas overflow-hidden flex">
+                  <div id="latBarRetrieval" class="h-full bg-sky-400 transition-all duration-300" style="width: 0%" title="Recuperación"></div>
+                  <div id="latBarReflection" class="h-full bg-amberSoft transition-all duration-300" style="width: 0%" title="Reflexión"></div>
+                  <div id="latBarGeneration" class="h-full bg-indigoSoft transition-all duration-300" style="width: 0%" title="Generación"></div>
+                </div>
+
+                <div class="grid grid-cols-3 gap-2 pt-1 text-[11px]">
+                  <div class="rounded-lg border border-hairline bg-canvas/70 p-2.5">
+                    <div class="flex items-center gap-1.5 text-muted">
+                      <span class="h-2 w-2 rounded-full bg-sky-400 shrink-0"></span>
+                      <span class="truncate">Recuperación</span>
+                    </div>
+                    <p id="latRetrievalVal" class="mt-1 font-mono text-xs font-semibold text-ink">—</p>
+                  </div>
+                  <div class="rounded-lg border border-hairline bg-canvas/70 p-2.5">
+                    <div class="flex items-center gap-1.5 text-muted">
+                      <span class="h-2 w-2 rounded-full bg-amberSoft shrink-0"></span>
+                      <span class="truncate">Reflexión</span>
+                    </div>
+                    <p id="latReflectionVal" class="mt-1 font-mono text-xs font-semibold text-ink">—</p>
+                  </div>
+                  <div class="rounded-lg border border-hairline bg-canvas/70 p-2.5">
+                    <div class="flex items-center gap-1.5 text-muted">
+                      <span class="h-2 w-2 rounded-full bg-indigoSoft shrink-0"></span>
+                      <span class="truncate">Generación</span>
+                    </div>
+                    <p id="latGenerationVal" class="mt-1 font-mono text-xs font-semibold text-ink">—</p>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Tabla de Trazas recientes -->
+            <div class="lg:col-span-7 rounded-xl border border-hairline bg-surface overflow-hidden">
+              <div class="px-4 py-3 border-b border-hairline flex items-center justify-between gap-2">
+                <h4 class="text-xs font-semibold text-ink">Últimas consultas en rag_metrics (tocá una fila para ver detalle)</h4>
+                <span id="dashTraceCount" class="px-2 py-0.5 rounded-md bg-canvas border border-hairline text-[11px] font-mono text-muted">0</span>
+              </div>
+              <div class="overflow-x-auto custom-scroll">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="border-b border-hairline bg-canvas/60 text-[10.5px] font-mono uppercase tracking-wider text-muted">
+                      <th class="py-2.5 px-3">Pregunta</th>
+                      <th class="py-2.5 px-2.5 text-center whitespace-nowrap">Chunks</th>
+                      <th class="py-2.5 px-2.5 whitespace-nowrap">Agente</th>
+                      <th class="py-2.5 px-2.5 text-right whitespace-nowrap">Latencia</th>
+                      <th class="py-2.5 px-2.5 text-right whitespace-nowrap">Fidelidad</th>
+                      <th class="py-2.5 px-3 text-right whitespace-nowrap">Relevancia</th>
+                    </tr>
+                  </thead>
+                  <tbody id="dashTraceList" class="divide-y divide-hairline text-xs">
+                    <!-- Filas inyectadas dinámicamente -->
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- TAB 2: CONFIGURACIÓN EN CALIENTE -->
+        <section id="dashTabConfig" class="hidden max-w-4xl mx-auto space-y-6">
+          <!-- Cabecera de sección -->
+          <div class="flex flex-wrap items-end justify-between gap-3 border-b border-hairline pb-4">
+            <div>
+              <div class="inline-flex items-center gap-1.5 rounded-full border border-hairline bg-surface px-2.5 py-0.5 text-[11px] font-mono text-amberSoft mb-2">
+                <span class="h-1.5 w-1.5 rounded-full bg-amberSoft"></span>
+                <span>En caliente · SQLite</span>
+              </div>
+              <h4 class="font-serif text-xl sm:text-2xl font-medium tracking-tight text-ink">
+                Ajustes del Pipeline
+              </h4>
+              <p class="mt-1 text-xs sm:text-sm text-muted">
+                Activá o desactivá etapas de razonamiento y cambiá el modelo sin reiniciar el servidor.
+              </p>
+            </div>
+          </div>
+
+          <!-- Grid responsive: Pipeline (izq) + Modelo y Estado (der) -->
+          <div class="grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+            <!-- Columna izquierda: Etapas del Pipeline -->
+            <div class="lg:col-span-7 rounded-2xl border border-hairline bg-surface overflow-hidden shadow-sm shadow-black/20">
+              <div class="px-5 py-3.5 border-b border-hairline bg-elevated/40 flex items-center justify-between gap-2">
+                <span class="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                  Etapas de Razonamiento y Calidad
+                </span>
+                <span class="text-[11px] font-mono text-indigoSoft">LangGraph</span>
+              </div>
+
+              <div class="divide-y divide-hairline">
+                <!-- Fila 1: Reflexión Agéntica -->
+                <div class="config-row flex items-start sm:items-center justify-between gap-4 p-5">
+                  <div class="flex items-start gap-3.5 min-w-0">
+                    <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-hairline bg-canvas text-indigoSoft">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3" />
+                      </svg>
+                    </div>
+                    <div class="min-w-0">
+                      <label for="cfgReflection" class="block text-sm font-medium text-ink cursor-pointer">
+                        Capa de Reflexión Agéntica
+                      </label>
+                      <p class="text-xs text-muted mt-1 leading-relaxed">
+                        Filtra fragmentos irrelevantes, analiza metadatos y resuelve conflictos entre libros antes de generar.
+                      </p>
+                    </div>
+                  </div>
+                  <label class="toggle-switch shrink-0 mt-1 sm:mt-0" aria-label="Activar Capa de Reflexión Agéntica">
+                    <input id="cfgReflection" type="checkbox" checked />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Fila 2: Re-búsqueda adaptativa -->
+                <div class="config-row flex items-start sm:items-center justify-between gap-4 p-5">
+                  <div class="flex items-start gap-3.5 min-w-0">
+                    <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-hairline bg-canvas text-amberSoft">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="23 4 23 10 17 10" />
+                        <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10" />
+                      </svg>
+                    </div>
+                    <div class="min-w-0">
+                      <label for="cfgRequery" class="block text-sm font-medium text-ink cursor-pointer">
+                        Re-búsqueda adaptativa
+                      </label>
+                      <p class="text-xs text-muted mt-1 leading-relaxed">
+                        Permite al agente reformular la consulta y volver a buscar en ChromaDB si el primer intento fue débil.
+                      </p>
+                    </div>
+                  </div>
+                  <label class="toggle-switch shrink-0 mt-1 sm:mt-0" aria-label="Activar Re-búsqueda adaptativa">
+                    <input id="cfgRequery" type="checkbox" checked />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+
+                <!-- Fila 3: Evaluación automática DeepEval -->
+                <div class="config-row flex items-start sm:items-center justify-between gap-4 p-5">
+                  <div class="flex items-start gap-3.5 min-w-0">
+                    <div class="mt-0.5 flex h-8 w-8 shrink-0 items-center justify-center rounded-lg border border-hairline bg-canvas text-emerald-400">
+                      <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                        <polyline points="22 12 18 12 15 21 9 3 6 12 2 12" />
+                      </svg>
+                    </div>
+                    <div class="min-w-0">
+                      <label for="cfgEvaluation" class="block text-sm font-medium text-ink cursor-pointer">
+                        Evaluación automática (DeepEval)
+                      </label>
+                      <p class="text-xs text-muted mt-1 leading-relaxed">
+                        Calcula Fidelidad y Precisión del contexto en segundo plano tras cada consulta sin demorar la respuesta.
+                      </p>
+                    </div>
+                  </div>
+                  <label class="toggle-switch shrink-0 mt-1 sm:mt-0" aria-label="Activar Evaluación automática con DeepEval">
+                    <input id="cfgEvaluation" type="checkbox" checked />
+                    <span class="toggle-slider"></span>
+                  </label>
+                </div>
+              </div>
+            </div>
+
+            <!-- Columna derecha: Modelo y Estado del Motor -->
+            <div class="lg:col-span-5 space-y-5">
+              <!-- Tarjeta Modelo Gemini -->
+              <div class="rounded-2xl border border-hairline bg-surface overflow-hidden shadow-sm shadow-black/20">
+                <div class="px-5 py-3.5 border-b border-hairline bg-elevated/40 flex items-center justify-between gap-2">
+                  <span class="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    Modelo de Generación
+                  </span>
+                  <span class="text-[11px] font-mono text-amberSoft">LLM</span>
+                </div>
+
+                <div class="p-5 space-y-3.5">
+                  <div>
+                    <label for="cfgModelSelect" class="block text-sm font-medium text-ink">
+                      Modelo Gemini principal
+                    </label>
+                    <p class="text-xs text-muted mt-1 leading-relaxed">
+                      Cambiá el modelo en caliente para comparar su latencia y fidelidad en Observabilidad.
+                    </p>
+                  </div>
+
+                  <div class="relative">
+                    <select
+                      id="cfgModelSelect"
+                      class="w-full appearance-none rounded-xl bg-canvas border border-hairline pl-3.5 pr-9 py-2.5 text-xs font-mono text-ink hover:border-[#343B4D] focus:border-indigoSoft focus:ring-2 focus:ring-indigoSoft/30 focus:outline-none transition-all cursor-pointer"
+                    ></select>
+                    <div class="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-muted">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                        <polyline points="6 9 12 15 18 9" />
+                      </svg>
+                    </div>
+                  </div>
+
+                  <div class="rounded-xl border border-hairline bg-canvas/70 px-3.5 py-2.5 text-[11px] text-muted leading-relaxed">
+                    <span class="text-ink font-medium">Tip:</span>
+                    <span class="font-mono text-amberSoft">flash-lite</span> prioriza velocidad (~1s);
+                    <span class="font-mono text-indigoSoft">3.5/3.6-flash</span> ofrece mayor profundidad en síntesis.
+                  </div>
+                </div>
+              </div>
+
+              <!-- Tarjeta Estado del Motor Local -->
+              <div class="rounded-2xl border border-hairline bg-surface overflow-hidden shadow-sm shadow-black/20">
+                <div class="px-5 py-3.5 border-b border-hairline bg-elevated/40 flex items-center justify-between gap-2">
+                  <span class="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                    Estado del Motor Local
+                  </span>
+                  <span class="inline-flex items-center gap-1.5 text-[11px] font-mono text-emerald-400">
+                    <span class="h-1.5 w-1.5 rounded-full bg-emerald-400"></span>
+                    Activo
+                  </span>
+                </div>
+
+                <div class="p-5">
+                  <div class="rounded-xl border border-hairline bg-canvas px-3.5 py-3">
+                    <p id="cfgSystemInfo" class="font-mono text-[11.5px] text-muted leading-relaxed break-words">
+                      Cargando información del sistema...
+                    </p>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </div>
+    </div>
+  </div>
+
+  <!-- Modal Visor de página original del PDF -->
+  <div
+    id="pdfModal"
+    class="fixed inset-0 z-50 hidden items-center justify-center bg-black/80 backdrop-blur-sm p-2 sm:p-6"
+    role="dialog"
+    aria-modal="true"
+    aria-labelledby="pdfModalTitle"
+  >
+    <div class="relative flex flex-col w-full max-w-5xl max-h-[94dvh] rounded-2xl border border-hairline bg-surface shadow-2xl shadow-black/70 overflow-hidden">
+      <!-- Barra superior del visor -->
+      <div class="flex flex-wrap items-center justify-between gap-2 px-4 py-3 border-b border-hairline bg-canvas/90">
+        <div class="min-w-0 flex-1">
+          <h3 id="pdfModalTitle" class="text-sm font-semibold text-ink truncate">Página original</h3>
+          <p id="pdfModalSubtitle" class="text-xs font-mono text-amberSoft">Página 1</p>
+        </div>
+
+        <div class="flex items-center gap-1.5 shrink-0">
+          <button
+            id="pdfPrevBtn"
+            type="button"
+            class="flex h-8 w-8 items-center justify-center rounded-lg border border-hairline bg-elevated text-muted hover:text-ink hover:border-[#363e54] disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+            title="Página anterior"
+            aria-label="Página anterior"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="15 18 9 12 15 6" />
+            </svg>
+          </button>
+          <button
+            id="pdfNextBtn"
+            type="button"
+            class="flex h-8 w-8 items-center justify-center rounded-lg border border-hairline bg-elevated text-muted hover:text-ink hover:border-[#363e54] disabled:opacity-35 disabled:cursor-not-allowed transition-colors"
+            title="Página siguiente"
+            aria-label="Página siguiente"
+          >
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </button>
+          <button
+            id="pdfZoomBtn"
+            type="button"
+            class="h-8 px-2.5 rounded-lg border border-hairline bg-elevated text-xs font-medium text-muted hover:text-ink hover:border-[#363e54] transition-colors"
+            title="Alternar zoom"
+          >
+            Zoom 100%
+          </button>
+          <button
+            id="pdfCloseBtn"
+            type="button"
+            class="flex h-8 w-8 items-center justify-center rounded-lg border border-hairline bg-elevated text-muted hover:text-ink hover:border-[#363e54] transition-colors"
+            aria-label="Cerrar visor"
+            title="Cerrar (Esc)"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <line x1="18" y1="6" x2="6" y2="18" />
+              <line x1="6" y1="6" x2="18" y2="18" />
+            </svg>
+          </button>
+        </div>
+      </div>
+
+      <!-- Contenedor de imagen con scroll táctil -->
+      <div id="pdfModalBody" class="relative flex-1 overflow-auto custom-scroll bg-[#0a0c10] p-3 sm:p-5 flex justify-center items-start min-h-[260px]">
+        <div id="pdfLoader" class="my-auto flex flex-col items-center gap-2.5 text-xs text-muted py-12">
+          <svg class="spin text-amberSoft" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12a9 9 0 1 1-6.219-8.56" />
+          </svg>
+          <span>Renderizando página en alta resolución...</span>
+        </div>
+        <p id="pdfError" class="hidden my-auto text-sm text-rose-300 text-center max-w-md py-10"></p>
+        <img
+          id="pdfPageImg"
+          alt="Página original del PDF"
+          class="hidden rounded-lg shadow-2xl shadow-black/80 border border-hairline bg-white transition-all pdf-img-fit"
+        />
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast discreto -->
+  <div
+    id="toast"
+    role="status"
+    aria-live="polite"
+    class="toast pointer-events-none fixed left-1/2 z-50 -translate-x-1/2 rounded-xl border border-hairline bg-elevated/95 backdrop-blur-md px-4 py-2 text-xs font-medium text-ink shadow-xl shadow-black/50 opacity-0 translate-y-2 transition-all duration-200"
+  ></div>
+
+  <script defer src="/static/app.js"></script>
+</body>
+</html>
