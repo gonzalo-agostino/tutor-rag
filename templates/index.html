@@ -111,9 +111,26 @@
       </div>
 
       <!-- Lista de libros (Alcance) -->
-      <div class="px-3 pt-1 pb-1.5 flex items-center justify-between">
-        <span class="text-[11px] font-medium uppercase tracking-wider text-muted">Alcance de lectura</span>
-        <span id="sidebarBookCount" class="text-[11px] font-mono text-muted">0</span>
+      <div class="px-3 pt-1 pb-1.5 flex items-center justify-between gap-2">
+        <div class="flex items-center gap-1.5 min-w-0">
+          <span class="text-[11px] font-medium uppercase tracking-wider text-muted truncate">Alcance de lectura</span>
+          <span id="sidebarBookCount" class="text-[11px] font-mono text-muted">0</span>
+        </div>
+        <button
+          id="syncBooksBtn"
+          type="button"
+          class="inline-flex items-center gap-1 rounded-md border border-hairline bg-canvas hover:bg-elevated hover:border-indigoSoft/40 px-2 py-0.5 text-[10px] font-medium text-muted hover:text-ink transition-colors shrink-0 disabled:opacity-60 disabled:cursor-wait"
+          title="Detectar e indexar únicamente PDFs nuevos desde tu carpeta de libros"
+          aria-label="Sincronizar libros nuevos"
+        >
+          <svg id="syncBooksIcon" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8" />
+            <path d="M3 3v5h5" />
+            <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16" />
+            <path d="M16 16h5v5" />
+          </svg>
+          <span id="syncBooksText">Sincronizar libros</span>
+        </button>
       </div>
 
       <nav id="sidebarBookList" class="flex-1 overflow-y-auto px-2 pb-3 space-y-0.5 custom-scroll" aria-label="Libros indexados">

@@ -6,8 +6,10 @@ import argparse
 import hashlib
 import logging
 import math
+import os
 import re
 import sys
+import threading
 import time
 from collections import deque
 from pathlib import Path
@@ -19,6 +21,7 @@ from pydantic import BaseModel, Field
 from pypdf import PdfReader
 
 from config import (
+    BOOKS_DIR,
     CHUNK_OVERLAP,
     CHUNK_SIZE,
     COLLECTION_NAME,
@@ -33,6 +36,14 @@ from config import (
     invalidate_metadata_cache,
     list_pdf_files,
 )
+
+# Lock global de concurrencia para impedir dos ingestas simultáneas en el mismo proceso
+_ingest_thread_lock = threading.Lock()
+
+
+def is_sync_running() -> bool:
+    """Indica si ya hay una sincronización o ingesta en curso."""
+    return _ingest_thread_lock.locked()
 
 logging.getLogger("pypdf").setLevel(logging.ERROR)
 # Aumentar presupuesto de parsing de streams para libros técnicos con gráficos vectoriales densos
@@ -267,6 +278,48 @@ def _chunk_id(source_name: str, file_hash: str, index: int) -> str:
     return f"{source_name}::{file_hash[:12]}::{index}"
 
 
+def scan_pdf_entries(books_dir: Path = BOOKS_DIR) -> dict[str, tuple[Path, int, int]]:
+    """Escanea BOOKS_DIR con os.scandir y devuelve {nombre: (ruta, tamaño_bytes, mtime_ns)}."""
+    entries: dict[str, tuple[Path, int, int]] = {}
+    if not books_dir.exists():
+        return entries
+    try:
+        with os.scandir(books_dir) as it:
+            for entry in it:
+                try:
+                    if not entry.name.lower().endswith(".pdf"):
+                        continue
+                    if not entry.is_file(follow_symlinks=True):
+                        continue
+                    st = entry.stat(follow_symlinks=True)
+                    if st.st_size <= 0:
+                        continue
+                    entries[entry.name] = (Path(entry.path), int(st.st_size), int(st.st_mtime_ns))
+                except OSError:
+                    continue
+    except OSError:
+        return entries
+    return entries
+
+
+def get_new_books(
+    books_dir: Path = BOOKS_DIR,
+    exclude_names: set[str] | None = None,
+) -> list[Path]:
+    """Compara los PDFs actuales en BOOKS_DIR contra ChromaDB y devuelve únicamente los nuevos."""
+    excluded = exclude_names or set()
+    entries = scan_pdf_entries(books_dir)
+    if not entries:
+        return []
+    indexed = set(get_indexed_metadata(use_cache=False)["books"])
+    new_paths = [
+        info[0]
+        for name, info in entries.items()
+        if name not in indexed and name not in excluded
+    ]
+    return sorted(new_paths, key=lambda p: p.name.lower())
+
+
 def ingest_books(
     reset: bool = False,
     libros_dir: Path = LIBROS_DIR,
@@ -274,6 +327,7 @@ def ingest_books(
     only_filters: list[str] | None = None,
     rate_limit: bool = True,
     verbose: bool = True,
+    target_files: list[Path] | None = None,
 ) -> IngestResult:
     """Escanea libros/*.pdf e indexa en ChromaDB los archivos nuevos, modificados o incompletos."""
     ensure_directories()
@@ -284,12 +338,15 @@ def ingest_books(
             print("Reiniciando colección vectorial en chroma_db/...", flush=True)
         _reset_collection()
 
-    pdf_files = list_pdf_files(libros_dir)
-    if only_filters:
-        lowered = [f.lower() for f in only_filters if f.strip()]
-        pdf_files = [
-            p for p in pdf_files if any(token in p.name.lower() for token in lowered)
-        ]
+    if target_files is not None:
+        pdf_files = list(target_files)
+    else:
+        pdf_files = list_pdf_files(libros_dir)
+        if only_filters:
+            lowered = [f.lower() for f in only_filters if f.strip()]
+            pdf_files = [
+                p for p in pdf_files if any(token in p.name.lower() for token in lowered)
+            ]
 
     if not pdf_files:
         meta = get_indexed_metadata()
@@ -440,6 +497,47 @@ def ingest_books(
         print(f"\n{result.message}", flush=True)
 
     return result
+
+
+def sync_new_books(
+    books_dir: Path = BOOKS_DIR,
+    batch_size: int = DEFAULT_BATCH_SIZE,
+    rate_limit: bool = True,
+    verbose: bool = True,
+    exclude_names: set[str] | None = None,
+) -> IngestResult:
+    """Sincroniza de forma incremental únicamente los PDFs nuevos en BOOKS_DIR (con lock anti-concurrencia)."""
+    acquired = _ingest_thread_lock.acquire(blocking=False)
+    if not acquired:
+        meta = get_indexed_metadata()
+        return IngestResult(
+            reset=False,
+            total_chunks_in_db=meta["total_chunks"],
+            indexed_books=meta["books"],
+            message="Ya hay una sincronización de libros en curso.",
+        )
+
+    try:
+        new_pdfs = get_new_books(books_dir=books_dir, exclude_names=exclude_names)
+        if not new_pdfs:
+            meta = get_indexed_metadata(use_cache=False)
+            return IngestResult(
+                reset=False,
+                total_chunks_in_db=meta["total_chunks"],
+                indexed_books=meta["books"],
+                message="La biblioteca ya está actualizada (sin libros nuevos).",
+            )
+
+        return ingest_books(
+            reset=False,
+            libros_dir=books_dir,
+            batch_size=batch_size,
+            rate_limit=rate_limit,
+            verbose=verbose,
+            target_files=new_pdfs,
+        )
+    finally:
+        _ingest_thread_lock.release()
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:

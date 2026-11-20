@@ -30,7 +30,9 @@ def _sync_env() -> None:
 
 _sync_env()
 
-LIBROS_DIR = BASE_DIR / "libros"
+_books_env = os.getenv("BOOKS_DIR", "").strip()
+BOOKS_DIR = Path(_books_env).expanduser() if _books_env else (BASE_DIR / "libros")
+LIBROS_DIR = BOOKS_DIR
 CHROMA_DIR = BASE_DIR / "chroma_db"
 STATIC_DIR = BASE_DIR / "static"
 TEMPLATES_DIR = BASE_DIR / "templates"

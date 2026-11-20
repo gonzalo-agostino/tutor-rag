@@ -13,6 +13,7 @@
     selectedBook: "",
     filterQuery: "",
     ingesting: false,
+    syncingBooks: false,
     sessions: [],
     activeSessionId: null,
     activeSession: null,
@@ -52,6 +53,9 @@
     bookFilterInput: document.getElementById("bookFilterInput"),
     sidebarBookList: document.getElementById("sidebarBookList"),
     sidebarBookCount: document.getElementById("sidebarBookCount"),
+    syncBooksBtn: document.getElementById("syncBooksBtn"),
+    syncBooksIcon: document.getElementById("syncBooksIcon"),
+    syncBooksText: document.getElementById("syncBooksText"),
     sidebarStats: document.getElementById("sidebarStats"),
     bookSelect: document.getElementById("bookSelect"),
     scopePillText: document.getElementById("scopePillText"),
@@ -1639,6 +1643,63 @@
     }
   }
 
+  async function pollBookSyncUntilDone() {
+    const maxAttempts = 240; // Hasta ~10 minutos para libros grandes
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      await new Promise((resolve) => setTimeout(resolve, 2500));
+      try {
+        const resp = await fetch("/api/books/sync/status");
+        if (!resp.ok) continue;
+        const st = await resp.json();
+        if (!st.running) {
+          await loadBooks();
+          if (st.error) {
+            showToast(st.last_message || `Error al sincronizar: ${st.error}`);
+          } else {
+            showToast(st.last_message || "Libros nuevos sincronizados.");
+          }
+          return;
+        }
+      } catch (_) {
+        // Reintentar en el próximo ciclo si hay un corte transitorio
+      }
+    }
+    await loadBooks();
+    showToast("La sincronización sigue en segundo plano. Actualizá en unos minutos.");
+  }
+
+  async function syncNewBooks() {
+    if (state.syncingBooks || state.ingesting) return;
+    if (!els.syncBooksBtn) return;
+
+    state.syncingBooks = true;
+    els.syncBooksBtn.disabled = true;
+    if (els.syncBooksIcon) els.syncBooksIcon.classList.add("spin");
+    if (els.syncBooksText) els.syncBooksText.textContent = "Sincronizando...";
+
+    try {
+      const resp = await fetch("/api/books/sync", { method: "POST" });
+      const data = await resp.json().catch(() => ({}));
+      if (!resp.ok) {
+        throw new Error(data.detail || `Error HTTP ${resp.status}`);
+      }
+
+      showToast(data.message || "Sincronización consultada.");
+      if (data.status === "started" || data.status === "already_running") {
+        await pollBookSyncUntilDone();
+      } else {
+        await loadBooks();
+      }
+    } catch (err) {
+      showToast(err.message || "No se pudo sincronizar la carpeta de libros.");
+    } finally {
+      state.syncingBooks = false;
+      els.syncBooksBtn.disabled = false;
+      if (els.syncBooksIcon) els.syncBooksIcon.classList.remove("spin");
+      if (els.syncBooksText) els.syncBooksText.textContent = "Sincronizar libros";
+    }
+  }
+
   async function triggerIngest() {
     if (state.ingesting) return;
     state.ingesting = true;
@@ -1675,6 +1736,9 @@
   els.closeSidebarBtn.addEventListener("click", closeMobileSidebar);
   els.sidebarBackdrop.addEventListener("click", closeMobileSidebar);
   els.ingestBtn.addEventListener("click", triggerIngest);
+  if (els.syncBooksBtn) {
+    els.syncBooksBtn.addEventListener("click", syncNewBooks);
+  }
 
   els.newSessionBtn.addEventListener("click", async () => {
     try {

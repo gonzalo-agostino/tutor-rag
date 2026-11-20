@@ -3,8 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import logging
+import time
+from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
 import pymupdf as fitz
 from fastapi import BackgroundTasks, Body, FastAPI, HTTPException, Query
@@ -15,6 +18,7 @@ from pydantic import BaseModel, Field
 
 from agent import AgenticTrace, Cita, ModoTutor, run_tutor
 from config import (
+    BOOKS_DIR,
     LIBROS_DIR,
     LLM_FALLBACK_MODELS,
     LLM_MODEL,
@@ -43,15 +47,162 @@ from db import (
     update_session,
 )
 from evaluation import evaluate_rag_turn
-from ingest import IngestResult, ingest_books
+from ingest import (
+    IngestResult,
+    get_new_books,
+    ingest_books,
+    is_sync_running,
+    scan_pdf_entries,
+    sync_new_books,
+)
+
+logger = logging.getLogger("tutor_rag.sync")
 
 ensure_directories()
 init_db()
+
+_ingest_lock = asyncio.Lock()
+_watcher_failed_signatures: dict[str, tuple[int, int]] = {}
+_sync_state: dict[str, Any] = {
+    "running": False,
+    "source": None,
+    "new_books": [],
+    "last_message": "",
+    "last_processed": [],
+    "last_failed": {},
+    "last_chunks_added": 0,
+    "last_sync_at": None,
+    "error": None,
+}
+_BOOKS_WATCHER_INTERVAL_SEC = 30
+
+
+async def _run_sync_in_background(
+    new_books: list[str],
+    source: str = "manual",
+    exclude_names: set[str] | None = None,
+) -> None:
+    """Ejecuta sync_new_books() protegido por lock de concurrencia y actualiza _sync_state."""
+    if _ingest_lock.locked() or is_sync_running():
+        return
+    async with _ingest_lock:
+        _sync_state.update(
+            {
+                "running": True,
+                "source": source,
+                "new_books": list(new_books),
+                "error": None,
+            }
+        )
+        try:
+            result = await asyncio.to_thread(
+                sync_new_books,
+                books_dir=BOOKS_DIR,
+                verbose=True,
+                exclude_names=exclude_names,
+            )
+            # Recordar archivos que fallaron (p.ej. PDF escaneado sin texto) con su firma (tamaño, mtime)
+            # para no re-intentarlos cada 30s salvo que el archivo cambie.
+            if result.failed_files:
+                current_entries = await asyncio.to_thread(scan_pdf_entries, BOOKS_DIR)
+                for fname in result.failed_files:
+                    if fname in current_entries:
+                        _, fsize, fmtime = current_entries[fname]
+                        _watcher_failed_signatures[fname] = (fsize, fmtime)
+
+            _sync_state.update(
+                {
+                    "last_message": result.message,
+                    "last_processed": list(result.processed_files),
+                    "last_failed": dict(result.failed_files),
+                    "last_chunks_added": int(result.total_chunks_added),
+                    "last_sync_at": int(time.time() * 1000),
+                    "error": None,
+                }
+            )
+        except Exception as exc:
+            logger.exception("Error durante la sincronización incremental de libros: %s", exc)
+            _sync_state.update(
+                {
+                    "last_message": f"Error al sincronizar libros: {exc}",
+                    "last_sync_at": int(time.time() * 1000),
+                    "error": str(exc),
+                }
+            )
+        finally:
+            _sync_state["running"] = False
+
+
+async def _books_watcher_loop(interval_seconds: int = _BOOKS_WATCHER_INTERVAL_SEC) -> None:
+    """Watcher liviano en segundo plano: revisa BOOKS_DIR cada 30s y auto-indexa PDFs nuevos estables."""
+    last_seen: dict[str, tuple[int, int]] = {}
+    while True:
+        try:
+            entries = await asyncio.to_thread(scan_pdf_entries, BOOKS_DIR)
+            current_signatures = {
+                name: (size, mtime) for name, (_, size, mtime) in entries.items()
+            }
+
+            if last_seen and not _ingest_lock.locked() and not is_sync_running():
+                meta = await asyncio.to_thread(get_indexed_metadata, False)
+                indexed = set(meta["books"])
+                stable_new: list[str] = []
+                excluded_failed: set[str] = set()
+
+                for name, sig in current_signatures.items():
+                    if name in indexed:
+                        _watcher_failed_signatures.pop(name, None)
+                        continue
+                    # Si el archivo ya falló antes con la misma firma (p.ej. PDF escaneado), omitirlo
+                    if _watcher_failed_signatures.get(name) == sig:
+                        excluded_failed.add(name)
+                        continue
+                    # Solo indexar si el tamaño y mtime se mantuvieron estables entre dos escaneos
+                    if last_seen.get(name) == sig:
+                        stable_new.append(name)
+
+                if stable_new:
+                    print(
+                        f"[Watcher] Detectados {len(stable_new)} PDF(s) nuevo(s) estable(s): "
+                        f"{', '.join(stable_new)}. Iniciando auto-indexación...",
+                        flush=True,
+                    )
+                    asyncio.create_task(
+                        _run_sync_in_background(
+                            stable_new,
+                            source="watcher",
+                            exclude_names=excluded_failed,
+                        )
+                    )
+
+            last_seen = current_signatures
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            logger.warning("Watcher de BOOKS_DIR encontró un error transitorio: %s", exc)
+
+        await asyncio.sleep(interval_seconds)
+
+
+@asynccontextmanager
+async def lifespan(_app: FastAPI):
+    """Ciclo de vida de FastAPI: inicia y detiene limpiamente el watcher de libros."""
+    watcher_task = asyncio.create_task(_books_watcher_loop(_BOOKS_WATCHER_INTERVAL_SEC))
+    try:
+        yield
+    finally:
+        watcher_task.cancel()
+        try:
+            await watcher_task
+        except asyncio.CancelledError:
+            pass
+
 
 app = FastAPI(
     title="Tutor RAG — Espacio de Estudio Técnico",
     description="Biblioteca técnica inteligente con LangGraph, ChromaDB, ONNX local y Gemini.",
     version="2.0.0",
+    lifespan=lifespan,
 )
 
 app.add_middleware(
@@ -63,8 +214,6 @@ app.add_middleware(
 )
 
 app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
-
-_ingest_lock = asyncio.Lock()
 
 
 class ChatTurn(BaseModel):
@@ -139,6 +288,15 @@ class IngestRequest(BaseModel):
     """Payload opcional para POST /api/ingest."""
 
     reset: bool = False
+
+
+class BooksSyncResponse(BaseModel):
+    """Respuesta devuelta por POST /api/books/sync."""
+
+    status: Literal["started", "up_to_date", "already_running"]
+    new_books: list[str] = Field(default_factory=list)
+    message: str
+    running: bool = False
 
 
 class BooksStatusResponse(BaseModel):
@@ -490,6 +648,64 @@ async def chat_endpoint(
             status_code=500,
             detail=f"Error generando la respuesta del tutor: {exc}",
         ) from exc
+
+
+@app.post("/api/books/sync", response_model=BooksSyncResponse)
+async def sync_books_endpoint() -> BooksSyncResponse:
+    """Detecta PDFs nuevos en BOOKS_DIR y dispara sync_new_books() en segundo plano."""
+    if _ingest_lock.locked() or is_sync_running() or _sync_state.get("running"):
+        return BooksSyncResponse(
+            status="already_running",
+            new_books=list(_sync_state.get("new_books") or []),
+            message="Ya hay una sincronización de libros en curso.",
+            running=True,
+        )
+
+    new_pdfs = await asyncio.to_thread(get_new_books, BOOKS_DIR)
+    if not new_pdfs:
+        return BooksSyncResponse(
+            status="up_to_date",
+            new_books=[],
+            message="La biblioteca ya está actualizada. No se detectaron PDFs nuevos.",
+            running=False,
+        )
+
+    new_names = [p.name for p in new_pdfs]
+    # Marcar running inmediatamente antes de devolver para que el primer poll de estado sea consistente
+    _sync_state.update(
+        {
+            "running": True,
+            "source": "manual",
+            "new_books": list(new_names),
+            "error": None,
+        }
+    )
+    asyncio.create_task(_run_sync_in_background(new_names, source="manual"))
+    return BooksSyncResponse(
+        status="started",
+        new_books=new_names,
+        message=(
+            f"Detectado(s) {len(new_names)} libro(s) nuevo(s): "
+            f"{', '.join(format_book_title(n) for n in new_names)}. Indexando en segundo plano..."
+        ),
+        running=True,
+    )
+
+
+@app.get("/api/books/sync/status")
+async def sync_books_status_endpoint() -> dict[str, Any]:
+    """Devuelve el estado actual de la sincronización incremental en segundo plano."""
+    return {
+        "running": bool(_sync_state.get("running") or _ingest_lock.locked() or is_sync_running()),
+        "source": _sync_state.get("source"),
+        "new_books": list(_sync_state.get("new_books") or []),
+        "last_message": _sync_state.get("last_message") or "",
+        "last_processed": list(_sync_state.get("last_processed") or []),
+        "last_failed": dict(_sync_state.get("last_failed") or {}),
+        "last_chunks_added": int(_sync_state.get("last_chunks_added") or 0),
+        "last_sync_at": _sync_state.get("last_sync_at"),
+        "error": _sync_state.get("error"),
+    }
 
 
 @app.post("/api/ingest", response_model=IngestResult)
