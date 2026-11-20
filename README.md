@@ -1,26 +1,78 @@
 # Tutor RAG Multi-dispositivo
 
-Tutor técnico personal basado en tus libros en PDF, construido con **LangGraph**, **Gemini 3.8 Flash**, **ChromaDB** y **FastAPI**, con una interfaz web oscura **mobile-first** optimizada para estudiar cómodamente desde la PC, iPad o celular en tu misma red Wi-Fi.
+Tutor técnico personal basado en tus libros en PDF, construido con **LangGraph (Agentic RAG de 4 capas)**, **ChromaDB + ONNX local**, **DeepEval**, **SQLite** y **FastAPI**, con una interfaz web oscura **mobile-first** optimizada para estudiar desde PC, iPad o celular en tu misma red Wi-Fi.
 
 ---
 
-## Arquitectura del proyecto
+## Arquitectura general
+
+```mermaid
+flowchart TD
+    UI["Frontend Dark UI (PC / iPad)\ntemplates/index.html · static/app.js"]
+
+    subgraph Backend["Backend FastAPI (app.py)"]
+        API["REST API\n/api/chat · /books · /page-image\n/api/sessions · /api/metrics · /api/config"]
+        SYNC["Sync & Watcher 30s\n/api/books/sync · lifespan"]
+        BG["BackgroundTasks\nEvaluación DeepEval"]
+    end
+
+    subgraph Agentic["Pipeline Agentic RAG (LangGraph)"]
+        L0["Router de Intención (0 ms)\nagent.py"]
+        L1["Capa 1: Recuperación + Limpieza\nretrieval.py · config.py"]
+        L2["Capa 2: Reflexión y Re-búsqueda\nreflection.py"]
+        L3["Capa 3: Generación y Citas\ngeneration.py"]
+        L4["Capa 4: Observabilidad DeepEval\nevaluation.py"]
+    end
+
+    subgraph Local["Almacenamiento y Cómputo Local"]
+        DRIVE["Google Drive Desktop\nBOOKS_DIR (libros/*.pdf)"]
+        ONNX["Embeddings Locales ONNX\nembeddings.py (e5-small int8)"]
+        CHROMA["ChromaDB Vectorial\nchroma_db/"]
+        SQLITE["SQLite Persistente\nchats.db (sesiones, métricas, config)"]
+    end
+
+    GEMINI["Gemini API\nGenerador: 3.5-flash-lite\nJuez DeepEval: 3.6-flash"]
+
+    UI <--> API
+    API --> L0
+    L0 --> L1 --> L2 --> L3
+    L1 <--> CHROMA
+    L1 --> ONNX
+    L2 <--> GEMINI
+    L3 <--> GEMINI
+    API --> SQLITE
+    API --> BG --> L4 <--> GEMINI
+    L4 --> SQLITE
+    DRIVE --> SYNC --> ONNX --> CHROMA
+    DRIVE --> API
+```
+
+> **Guía visual completa:** consultá [ARCHITECTURE.md](ARCHITECTURE.md) para ver los 4 diagramas detallados (grafo LangGraph con router conversacional y re-búsqueda conceptual, secuencia de evaluación DeepEval en segundo plano y flujo de auto-indexación incremental desde Google Drive Desktop).
+
+### Estructura del proyecto
 
 ```text
 tutor-rag/
-├── libros/               # Colocá acá tus libros en PDF (ignorados por git)
-│   └── .gitkeep
+├── libros/               # Carpeta de PDFs o symlink a Google Drive Desktop (ignorada por git)
 ├── chroma_db/            # Base vectorial persistente (ignorada por git)
+├── chats.db              # Sesiones multi-dispositivo, métricas RAG y config (ignorada por git)
 ├── templates/
-│   └── index.html        # Interfaz web editorial (Tailwind + Inter/Lora/JetBrains Mono)
+│   └── index.html        # Interfaz web dark (Tailwind + Mermaid + Visor PDF + Observabilidad)
 ├── static/
-│   ├── styles.css        # Estilos editoriales, código y fuentes colapsables
-│   └── app.js            # Lógica de cliente, selector de alcance y modos rápidos
-├── config.py             # Configuración compartida, rutas y clientes Gemini/Chroma
+│   ├── styles.css        # Estilos editoriales, código y dashboard Bento
+│   └── app.js            # Chats concurrentes, hilo paralelo, visor PDF, sync y observabilidad
+├── config.py             # Rutas (BOOKS_DIR/LIBROS_DIR), modelos Gemini y limpieza de ruido PDF
 ├── embeddings.py         # Embeddings locales livianos ONNX int8 (multilingual-e5-small)
-├── ingest.py             # CLI de ingesta incremental y reanudable de PDFs (con --reset / --only)
-├── agent.py              # Grafo LangGraph (modos "lectura_rapida" y "consulta")
-├── app.py                # Backend FastAPI (/, /books, /api/chat, /api/ingest)
+├── ingest.py             # Ingesta incremental/reanudable y sync_new_books() con lock
+├── retrieval.py          # Capa 1: búsqueda bilingüe, multi-libro, resumen y repreguntas
+├── reflection.py         # Capa 2: crítico previo, resolución de conflictos y re-búsqueda conceptual
+├── generation.py         # Capa 3: prompts editoriales, Mermaid, citas 1:1 y fallback de modelos
+├── evaluation.py         # Capa 4: evaluación online DeepEval (Faithfulness + ContextualRelevancy)
+├── agent.py              # Orquestador LangGraph (router de intención + 3 capas + telemetría)
+├── db.py                 # Capa SQLite en modo WAL (sesiones, mensajes, rag_metrics, settings)
+├── app.py                # Backend FastAPI + watcher automático de BOOKS_DIR cada 30s
+├── tests/                # Suite de pruebas unitarias (unittest)
+├── ARCHITECTURE.md       # Guía visual detallada con diagramas Mermaid
 ├── .env                  # Variables de entorno locales (ignorado por git)
 ├── pyproject.toml        # Dependencias gestionadas con uv
 └── README.md
@@ -156,6 +208,12 @@ Remove-NetFirewallRule -DisplayName "Tutor RAG (Puerto 8000)"
 | --- | --- | --- |
 | `GET` | `/` | Espacio de estudio web (`templates/index.html` + `/static/styles.css` y `/static/app.js`) |
 | `GET` | `/books` | Lista dinámica de PDFs indexados en ChromaDB y estadísticas |
-| `POST` | `/api/chat` | Recibe `{ "mensaje", "modo": "lectura_rapida" \| "consulta", "libro"?, "historial"? }` y devuelve `{ "respuesta", "citas", "modo" }` |
-| `POST` | `/api/ingest` | Ejecuta la ingesta incremental (acepta `{ "reset": true }` opcionalmente) |
+| `GET` | `/page-image` | Renderiza en PNG (PyMuPDF 2x) la página original exacta de un libro citado |
+| `POST` | `/api/chat` | Ejecuta el grafo Agentic RAG, persiste el turno en SQLite y agenda DeepEval en segundo plano |
+| `POST` | `/api/books/sync` | Detecta e indexa en segundo plano únicamente los PDFs nuevos en `BOOKS_DIR` |
+| `GET` | `/api/books/sync/status` | Consulta el estado de la sincronización incremental en curso |
+| `POST` | `/api/ingest` | Ejecuta la ingesta incremental completa (acepta `{ "reset": true }` opcionalmente) |
+| `GET/POST/PATCH/DELETE` | `/api/sessions` | Gestión persistente de chats multi-dispositivo en SQLite |
+| `GET/DELETE` | `/api/metrics` | Métricas de observabilidad DeepEval, latencias por etapa y trazas recientes |
+| `GET/PATCH` | `/api/config` | Configuración en caliente del pipeline (reflexión, re-búsqueda, evaluación, modelo LLM) |
 | `GET` | `/api/health` | Verificación rápida del estado del backend |
